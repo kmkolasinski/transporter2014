@@ -14,17 +14,24 @@ MODULE modjed
     double precision  :: Rd
     double precision  :: L2LR
     double precision  :: LR2L
-    double precision  :: M_EFF
-    double precision  :: E_MAT
-    double precision  :: G_LAN
+    double precision  :: M_EFF ! masa efektywna
+    double precision  :: E_MAT ! przenikalnosc
+    double precision  :: G_LAN ! czynnik landego
+    double precision :: atomic_Ef   ! energia elektronu [meV]
+    double precision :: atomic_Bz   ! polemagnetyczne w [T]
 
-    logical,parameter :: TRANS_DEBUG = .true.
+    logical,parameter :: TRANS_DEBUG = .false.
 
     ENUM,BIND(C)
         ENUMERATOR :: B_NORMAL          = 0 ! FLAGA OZNACZA ZE TO NIE JEST BRZEG
         ENUMERATOR :: B_DIRICHLET       = 2
         ENUMERATOR :: B_WEJSCIE         = 16
         ENUMERATOR :: B_EMPTY           = -1
+    END ENUM
+
+    ENUM,BIND(C)
+        ENUMERATOR :: ZRODLO_KIERUNEK_PRAWO= 0
+        ENUMERATOR :: ZRODLO_KIERUNEK_LEWO = 1
     END ENUM
 
     contains

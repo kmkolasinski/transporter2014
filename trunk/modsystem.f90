@@ -8,14 +8,22 @@ module modsystem
      ! -----------------------------------------------------------------
     integer :: no_zrodel      ! liczba zrodel w ukladzie
     integer :: TRANS_MAXN     ! liczba oczek brane do rozwiazania ukladu rownan
+    integer :: MATASIZE
     integer :: Nx,Ny          ! wymiar ukladu
     double precision :: DX,Ef,Bz
+    doubleprecision :: TRANS_R ! prawdopodobienstwo odbicia
+    doubleprecision :: TRANS_T ! prawdopodobienstwo przejscia
 
-    type(czrodlo),dimension(:),allocatable        :: zrodla ! tablica z obiektami zrodla
+
+    type(czrodlo),dimension(:),allocatable        :: zrodla ! TABLICA Z OBIEKTAMI ZRODLA
     integer,dimension(:,:), allocatable           :: GFLAGS ! ZAWIERA FLAGI UKLADU (DIRICHLET,WEJSCIA,POZA)
+    integer,dimension(:,:), allocatable           :: ZFLAGS ! ZAWIERA FLAGI WEJSC WARTOSC FLAGI OZNACZA NUMER WEJSCIA - 1,2, ...
     integer,dimension(:,:), allocatable           :: GINDEX ! INDEKSUJE GEOMETRIE UKLADU (-1) OZNACZA POZA UKLADEM
     double precision,dimension(:,:), allocatable  :: UTOTAL ! MACIERZ POTENCJALU EFEKTYWNEGO
-
+    complex*16,dimension(:),allocatable           :: CMATA  ! GLOWNA MACIERZ PROGRAMU W FORMACIE (ROW,COL,VALS), TUTAJ TYLKO VALS
+    integer,dimension(:,:),allocatable            :: IDXA   ! INDEKSY MACIERZY (ROW,COL)
+    complex*16,dimension(:),allocatable           :: VPHI   ! SZUKANA FUNKCJA FALOWA, PRZELICZANA POTEM NA LDOS
+    complex*16,dimension(:,:),allocatable         ::  PHI   ! FUNKCJA FALOWA ZAPISANA NA DWUWYMIAROWEJ MACIERZY
 
     ! rodzaje zapisu do pliku
     ENUM,BIND(C)
@@ -23,11 +31,14 @@ module modsystem
         ENUMERATOR :: ZAPISZ_POTENCJAL  = 1
         ENUMERATOR :: ZAPISZ_KONTUR     = 2
         ENUMERATOR :: ZAPISZ_INDEKSY    = 3
+        ENUMERATOR :: ZAPISZ_PHI        = 4
     END ENUM
-    public :: ZAPISZ_FLAGI , ZAPISZ_POTENCJAL , ZAPISZ_KONTUR , ZAPISZ_INDEKSY
+
+    public :: ZAPISZ_FLAGI , ZAPISZ_POTENCJAL , ZAPISZ_KONTUR , ZAPISZ_INDEKSY , ZAPISZ_PHI
     public :: zrodla,UTOTAL,GFLAGS,GINDEX
     public :: system_inicjalizacja , system_zwalnienie_pamieci , system_inicjalizacja_ukladu
-    public :: system_zapisz_do_pliku
+    public :: system_zapisz_do_pliku , system_rozwiaz_problem
+    public :: TRANS_T,TRANS_R
     contains
 
 
@@ -56,9 +67,12 @@ module modsystem
 
         ! alokacja pamieci
         allocate( GFLAGS(nx,ny))
+        allocate( ZFLAGS(nx,ny))
         allocate( GINDEX(nx,ny))
         allocate( UTOTAL(nx,ny))
+        allocate(    PHI(nx,ny))
         GFLAGS = B_NORMAL
+        ZFLAGS = 0
         GINDEX = 0
         UTOTAL = 0
         ! Tworzymy uklad...
@@ -81,8 +95,10 @@ module modsystem
         integer :: i
         if(TRANS_DEBUG==.true.) print*,"System: Zwalnianie pamieci"
         if(allocated(GFLAGS))   deallocate(GFLAGS)
+        if(allocated(ZFLAGS))   deallocate(ZFLAGS)
         if(allocated(GINDEX))   deallocate(GINDEX)
         if(allocated(UTOTAL))   deallocate(UTOTAL)
+        if(allocated(PHI))      deallocate(PHI)
         do i = 1 , no_zrodel
             call zrodla(i)%zrodlo_zwolnij_pamiec()
         enddo
@@ -109,21 +125,24 @@ module modsystem
                 ni = zrodla(nrz)%polozenia(i,1)
                 nj = zrodla(nrz)%polozenia(i,2)
                 GFLAGS(ni,nj) = B_WEJSCIE
+                ZFLAGS(ni,nj) = nrz ! przypisujemy fladze numer wejscia
             enddo
             if(zrodla(nrz)%bKierunek)then
                 ni = zrodla(nrz)%polozenia(1,1) + 1
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni + in_len - 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
+                if(nj==1) nj = 2
+                if(mj==NY)mj = NY-1
                 GFLAGS(ni:mi,nj:mj) = B_NORMAL
-                print*,ni,mi,nj,mj
             else
                 ni = zrodla(nrz)%polozenia(1,1) - 1
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni - in_len + 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
+                if(nj==1) nj = 2
+                if(mj==NY)mj = NY-1
                 GFLAGS(mi:ni,nj:mj) = B_NORMAL
-                print*,ni,mi,nj,mj
             endif
         enddo
 
@@ -185,6 +204,308 @@ module modsystem
 
     end subroutine system_inicjalizacja_ukladu
 
+
+    ! --------------------------------------------------------------------
+    ! Rozwiazywanie problemu dla zrodla o podanym numerze - nrz
+    ! --------------------------------------------------------------------
+    subroutine system_rozwiaz_problem(nrz)
+        integer,intent(in)  :: nrz
+        integer,allocatable :: HBROWS(:)
+        integer :: i,j,ni,nj,mod_in
+
+        Ef  = atomic_Ef/1000.0/Rd
+        BZ  = BtoDonorB(atomic_Bz)
+        print*,"! ----------------------------------------------- !"
+        print*,"! Rozpoczecie obliczen dla zrodla=", nrz
+        print*,"!   Ef=", Ef*Rd*1000    , "[meV]"
+        print*,"!   Bz=", DonorBtoB(Bz) , "[T]"
+        print*,"! ----------------------------------------------- !"
+
+
+
+        call oblicz_rozmiar_macierzy()
+
+        allocate(CMATA(MATASIZE))
+        allocate(IDXA (MATASIZE,2))
+        allocate(VPHI(TRANS_MAXN))
+        allocate(HBROWS(TRANS_MAXN+1))
+
+        mod_in = 1
+        zrodla(nrz)%ck(:) = 0
+        zrodla(nrz)%ck(mod_in) = 1
+        call zrodla(nrz)%zrodlo_oblicz_Fj(dx)
+        VPHI = 0
+        do i = 1 , zrodla(nrz)%N
+            ni = zrodla(nrz)%polozenia(i,1)
+            nj = zrodla(nrz)%polozenia(i,2)
+            VPHI(GINDEX(ni,nj)) = zrodla(nrz)%Fj(i)
+        enddo
+        call wypelnij_macierz()
+        call convert_to_HB(MATASIZE,IDXA,HBROWS)
+        call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI)
+
+        call oblicz_TR(nrz,mod_in)
+
+        PHI  = 0
+        do i = 1 , Nx
+        do j = 1 , Ny
+            if(GINDEX(i,j) > 0) PHI(i,j) = VPHI(GINDEX(i,j))
+        enddo
+        enddo
+
+
+        deallocate(CMATA)
+        deallocate(IDXA)
+        deallocate(VPHI)
+        deallocate(HBROWS)
+
+    end subroutine system_rozwiaz_problem
+
+    ! ---------------------------------------------------------------------
+    !   Wyliczanie rozmiaru macierzy: zakladamy, ze na :
+    ! 1. warunek Dirichleta potrzeba jedna wartosc
+    ! 2. normalny punkt wewnatrz ukladu potrzeba 5 wartosci (4 siasiadow + 1 wezel centralny)
+    ! 3. dla wejsc potrzeba N-2 + 1 wezlow: gdzie N-2 oznacza ze bierzemy
+    !    wezly wejsciowe od 2 .. N -1, a +1 wynika z faktu, ze mamy zawsze
+    !    polaczenie z wezlem (i+1,j), lub (i-1,j)
+    ! ---------------------------------------------------------------------
+
+    subroutine oblicz_rozmiar_macierzy()
+        integer :: i , j
+        MATASIZE   = 0
+        TRANS_MAXN = 0
+        do i = 1 , NX
+        do j = 1 , Ny
+            select case(GFLAGS(i,j))
+            case(B_DIRICHLET)
+                    MATASIZE = MATASIZE + 1
+                    TRANS_MAXN = TRANS_MAXN + 1
+            case(B_WEJSCIE)
+                    MATASIZE = MATASIZE + zrodla(ZFLAGS(i,j))%N + 1 - 2 ! +1 na relacje prawo/lewo -2 na obciecie indeksow (1 i N)
+                    TRANS_MAXN = TRANS_MAXN + 1
+            case(B_NORMAL)
+                    MATASIZE = MATASIZE + 5
+                    TRANS_MAXN = TRANS_MAXN + 1
+            end select
+        enddo
+        enddo
+        print*,"Rozmiar macierzy - H:",MATASIZE
+        print*,"Rozmiar problemu - Y:",TRANS_MAXN
+    end subroutine oblicz_rozmiar_macierzy
+
+
+    ! ---------------------------------------------------------------------
+    !   Funkcja wypelnia macierz hamiltonianu w sposob rzadki, zapisujac
+    ! kolejne niezerowe elementy H do dwoch wektorow:
+    ! cmatA(i) - i-ta wartosc niezerowa w macierzy
+    ! idxA(i,1) - w jakim wierszu macierzy sie znajduje i-ty nie zerowy element
+    ! idxA(i,2) - oraz w jakiej kolumnie
+    ! W zaleznosci od flagi wezla elementy macierzy H sa wyznaczane w
+    ! odpowiedni sposob.
+    ! ---------------------------------------------------------------------
+
+    subroutine wypelnij_macierz()
+
+        ! zmienne pomocniczne
+        integer          :: i,j,itmp,ni,nj,pnj,nn,ln,nzrd
+        complex*16       :: post
+
+        itmp  = 1
+        do i = 1, nx
+        do j = 1, ny
+            if(GINDEX(i,j) > 0) then
+                if( GFLAGS(i,j) == B_DIRICHLET ) then
+
+                    cmatA(itmp)  = CMPLX(1.0)
+                    idxA(itmp,1) = GINDEX(i, j)
+                    idxA(itmp,2) = GINDEX(i, j)
+                    itmp = itmp + 1
+
+                elseif( GFLAGS(i,j) == B_NORMAL) then
+
+                    cmatA(itmp)   = CMPLX( 2.0/DX/DX + UTOTAL(i,j) - Ef )
+                    idxA (itmp,1) = GINDEX(i,j)
+                    idxA (itmp,2) = GINDEX(i,j)
+                    itmp = itmp + 1
+
+                    cmatA(itmp)   = CMPLX(-0.5/DX/DX*EXP(+II*DX*DX*(j)*BZ)  )
+                    idxA (itmp,1) = GINDEX(i  ,j)
+                    idxA (itmp,2) = GINDEX(i-1,j)
+                    itmp = itmp + 1
+
+                    cmatA(itmp)   = CMPLX(-0.5/DX/DX*EXP(-II*DX*DX*(j)*BZ)  )
+                    idxA (itmp,1) = GINDEX(i  ,j)
+                    idxA (itmp,2) = GINDEX(i+1,j)
+                    itmp = itmp + 1
+
+                    cmatA(itmp) = CMPLX(-0.5/DX/DX)
+                    idxA(itmp,1) = GINDEX(i,j)
+                    idxA(itmp,2) = GINDEX(i,j+1)
+                    itmp = itmp + 1
+
+                    cmatA(itmp) = CMPLX(-0.5/DX/DX)
+                    idxA(itmp,1) = GINDEX(i,j)
+                    idxA(itmp,2) = GINDEX(i,j-1)
+                    itmp = itmp + 1
+
+                ! ----------------------------------------------------------------------
+                ! Obsluga wejsc
+                ! ----------------------------------------------------------------------
+                else if( GFLAGS(i,j) == B_WEJSCIE) then
+                    nzrd = ZFLAGS(i,j)
+                    ! ------------------------------------------------------------------
+                    ! Zrodla prawe:
+                    !
+                    !                      ------------------------>
+                    !
+                    ! ------------------------------------------------------------------
+                    if( zrodla(nzrd)%bKierunek == .true. ) then
+
+                    ni   = i
+                    nj   = j ! globalne polozenia na siatce
+                    ln   = GINDEX(i,j) - GINDEX(i,zrodla(nzrd)%polozenia(1,2)) + 1 ! lokalny indeks
+
+                    cmatA(itmp)   = CMPLX(-0.5/DX/DX*2*cos(DX*DX*(nj)*BZ))
+                    idxA (itmp,1) = GINDEX(i  ,j)
+                    idxA (itmp,2) = GINDEX(i+1,j)
+                    itmp = itmp + 1
+
+                    post = 0.5/DX/DX*(EXP(II*DX*DX*(nj)*BZ))
+
+                    do nn = 2 , zrodla(nzrd)%N - 1
+                    pnj   = zrodla(nzrd)%polozenia(nn,2)
+                    if( ln == nn  ) then
+
+                        cmatA(itmp)   = CMPLX( 2.0/DX/DX + UTOTAL(i,j) - Ef ) &
+                           & + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA (itmp,1) = GINDEX(ni,nj)
+                        idxA (itmp,2) = GINDEX(ni,pnj)
+                        itmp = itmp + 1
+
+                    else if( nn == ln+1  ) then
+                        cmatA(itmp) = CMPLX(-0.5/DX/DX) &
+                        &   + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA(itmp,1) = GINDEX(ni,nj)
+                        idxA(itmp,2) = GINDEX(ni,pnj)
+                        itmp = itmp + 1
+                    else if( nn == ln-1  ) then
+
+                        cmatA(itmp) = CMPLX(-0.5/DX/DX) &
+                        &   + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA(itmp,1) = GINDEX(ni,nj)
+                        idxA(itmp,2) = GINDEX(ni,pnj)
+                        itmp = itmp + 1
+                    else
+                        cmatA(itmp)  = post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA(itmp,1) = GINDEX(ni,nj)
+                        idxA(itmp,2) = GINDEX(ni,pnj)
+                        itmp = itmp + 1
+                    endif
+                    enddo
+                    else
+                    ! ------------------------------------------------------------------
+                    ! Zrodla lewe:
+                    !
+                    !                      <------------------------
+                    !
+                    ! ------------------------------------------------------------------
+                    ni   = i
+                    nj   = j ! globalne polozenia na siatce
+                    ln   = GINDEX(i,j) - GINDEX(i,zrodla(nzrd)%polozenia(1,2)) + 1 ! lokalny indeks
+
+                    cmatA(itmp)   = CMPLX(-0.5/DX/DX*2*cos(DX*DX*(nj)*BZ))
+                    idxA (itmp,1) = GINDEX(i  ,j)
+                    idxA (itmp,2) = GINDEX(i-1,j)
+                    itmp = itmp + 1
+
+                    post =-0.5/DX/DX*(EXP(-II*DX*DX*(nj)*BZ))
+
+                    do nn = 2 , zrodla(nzrd)%N - 1
+                    pnj   = zrodla(nzrd)%polozenia(nn,2)
+                    if( ln == nn  ) then
+
+                        cmatA(itmp)   = CMPLX( 2.0/DX/DX + UTOTAL(i,j) - Ef ) &
+                           & + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA (itmp,1) = GINDEX(ni,nj)
+                        idxA (itmp,2) = GINDEX(ni,pnj)
+                        itmp = itmp + 1
+
+                    else if( nn == ln+1  ) then
+                        cmatA(itmp) = CMPLX(-0.5/DX/DX) &
+                        &   + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA(itmp,1) = GINDEX(ni,nj)
+                        idxA(itmp,2) = GINDEX(ni,pnj)
+                        itmp = itmp + 1
+                    else if( nn == ln-1  ) then
+
+                        cmatA(itmp) = CMPLX(-0.5/DX/DX) &
+                        &   + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA(itmp,1) = GINDEX(ni,nj)
+                        idxA(itmp,2) = GINDEX(ni,pnj)
+                        itmp = itmp + 1
+                    else
+                        cmatA(itmp)  = post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA(itmp,1) = GINDEX(ni,nj)
+                        idxA(itmp,2) = GINDEX(ni,pnj)
+                        itmp = itmp + 1
+                    endif
+                    enddo
+
+                    endif ! end of if PRAWE/ LEWE
+                endif ! end of if WEJSCIE
+            endif ! end if GINDEX > 0
+        enddo ! end of j
+        enddo ! end of i
+
+        if ( itmp -1 - MATASIZE /= 0 ) then
+            print *, "Blad rozmiar maicierzy niezgodny z przewidywanym:" , itmp - 1
+            stop
+        else
+            print *, "Macierz skonstruowana poprawnie..."
+        endif
+
+
+    end subroutine wypelnij_macierz
+
+    ! -------------------------------------------------------------------
+    ! Procedura oblicza prawdopodobienstwo przejscia T oraz odbicia R
+    ! dla podanego zrodla wejsciowego nrz i danego modu wchodzacego mod_in
+    ! -------------------------------------------------------------------
+    subroutine oblicz_TR(nrz,mod_in)
+        integer,intent(in) :: nrz,mod_in
+        integer :: i
+        doubleprecision :: Jin
+        ! obliczamy apliduty prawdopodobienstwa
+        do i = 1 , no_zrodel
+            call zrodla(i)%zrodlo_oblicz_dk(VPHI,GINDEX,dx)
+            !call zrodla(i)%zrodlo_wypisz_ckdk()
+        enddo
+        ! na podstawie amplitud prawdopodobienstwa obliczamy strumienie
+        do i = 1 , no_zrodel
+            call zrodla(i)%zrodlo_oblicz_JinJout(dx)
+        enddo
+
+        ! na podstawie strumieni obliczamy transmisje oraz prawdopodobienstwo odbicia
+        Jin = zrodla(nrz)%Jin(mod_in)
+        do i = 1 , no_zrodel
+            zrodla(i)%Jin(:)  = zrodla(i)%Jin(:)   / Jin
+            zrodla(i)%Jout(:) = zrodla(i)%Jout(:)  / Jin
+            call zrodla(i)%zrodlo_wypisz_JinJout()
+        enddo
+
+        TRANS_R = sum( abs(zrodla(nrz)%Jout(:)) )
+        TRANS_T = 0
+        do i = 1 ,no_zrodel
+            if(i /= nrz) TRANS_T = TRANS_T + sum( abs(zrodla(i)%Jout(:)) )
+        enddo
+        print*,"T = ", TRANS_T
+        print*,"R = ", TRANS_R
+        print*,"W = ", TRANS_R + TRANS_T
+
+    end subroutine oblicz_TR
+
+
+
     ! ------------------------------------------------------------ -------
     ! Funkcja zapisuje do pliku nazwa dane wskazane przez typ (patrz enum)
     ! ------------------------------------------------------------ -------
@@ -235,6 +556,15 @@ module modsystem
             write(86554,*),""
         enddo
     ! ---------------------------------------
+    case(ZAPISZ_PHI)
+        do i = 1 , NX
+        do j = 1 , NY
+                fval = abs(PHI(i,j))**2
+                write(86554,"(3e20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
+        enddo
+            write(86554,*),""
+        enddo
+    ! ---------------------------------------
     case default
             print*,"System: Zapisz do pliku - podano zly argument."
     end select
@@ -242,5 +572,80 @@ module modsystem
     close(86554)
     endsubroutine system_zapisz_do_pliku
 
+    ! ==========================================================================
+    !
+    !
+    !                          SUPER LU
+    !
+    !
+    !
+    ! ==========================================================================
+
+    subroutine convert_to_HB(no_vals,rows_cols,out_rows)
+          integer,intent(in)                  :: no_vals
+          integer,intent(in),dimension(:,:)  :: rows_cols
+          integer,intent(inout),dimension(:) :: out_rows
+          integer :: iterator, irow
+          integer :: i, n
+
+          n        = no_vals
+          iterator = 0
+          irow     = 0
+          do i = 1 , n
+              if( rows_cols(i,1) /= irow ) then
+                iterator = iterator + 1
+                out_rows(iterator) = i
+                irow = rows_cols(i,1)
+              endif
+          enddo
+          out_rows(iterator+1) = n + 1
+      end subroutine convert_to_HB
+
+
+    subroutine solve_system(no_rows,no_vals,colptr,rowind,values,b)
+        integer,intent(in)                 :: no_rows
+        integer,intent(in)                 :: no_vals
+        integer,intent(in),dimension(:)    :: colptr,rowind
+        complex*16,intent(in),dimension(:) :: values
+        complex*16,intent(inout),dimension(:) :: b
+
+        integer n, nnz, nrhs, ldb, info, iopt
+        integer*8 factors
+!
+!      call zhbcode1(n, n, nnz, values, rowind, colptr)
+!
+
+        n    = no_rows
+        nnz  = no_vals
+        ldb  = n
+        nrhs = 1
+
+
+! First, factorize the matrix. The factors are stored in *factors* handle.
+      iopt = 1
+      call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr , rowind , b, ldb,factors, info )
+!
+      if (info .eq. 0) then
+         write (*,*) 'Factorization succeeded'
+      else
+         write(*,*) 'INFO from factorization = ', info
+      endif
+!
+! Second, solve the system using the existing factors.
+      iopt = 2
+      call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind ,  b, ldb,factors, info )
+!
+      if (info .eq. 0) then
+         write (*,*) 'Solve succeeded'
+!         write (*,*) (b(i), i=1, n)
+      else
+         write(*,*) 'INFO from triangular solve = ', info
+      endif
+
+! Last, free the storage allocated inside SuperLU
+      iopt = 3
+      call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind, b, ldb,factors, info )
+
+      endsubroutine solve_system
 
 end module

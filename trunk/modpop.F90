@@ -71,9 +71,19 @@ MODULE modpop
         BZ    = BtoDonorB(pB)
         hny   = (N+1)/2.0!
         wypisz = 0
-        print*,"Relacja dyspersji:"
-        print*,"    N  :",N
-        print*,"    hny:",hny
+        if(TRANS_DEBUG)then
+            print*,"Relacja dyspersji:"
+            print*,"    N  :",N
+            print*,"    hny:",hny
+            print*,"t0 :",t0
+            print*,"Rd :",Rd
+            print*,"N  :",N
+            print*,"Ef :",Ef
+            print*,"DX :",DX
+            print*,"hny:",hny
+            print*,"B  :",pB
+            print*,"Kmax:",3.14159/pDX
+        endif
 
         allocate(Uvec(N))
         allocate(Hamiltonian(N,N))
@@ -271,7 +281,7 @@ MODULE modpop
         k1    = 0
         k2    = 3.14159/DX
         kdiff = 1.0
-        do while( kdiff > 1e-5  )
+        do while( kdiff > 1e-6  )
             nk    = (k1+k2)/2
             Emax = Ef*2
             cnk  = nk
@@ -320,7 +330,7 @@ MODULE modpop
         k2    = 3.14159/DX
         kdiff = 1.0
 
-        do while( kdiff > 1e-5  )
+        do while( kdiff > 1e-6  )
 
             nk   = (k1+k2)/2
             Emax =  Ef*2*NO_EVAN_MODES
@@ -362,40 +372,40 @@ MODULE modpop
 
     subroutine modpop_znajdz_k_out(num)
         integer, intent(in) :: num
-        double precision    :: K_VEC , k1 , k2 , kdiff , NK
+        !double precision    :: K_VEC , k1 , k2 , kdiff , NK
+        double precision    ::  NK
 
         complex*16        :: cnk
         double precision :: YcY
 
-        k1    = 0
-        k2    =-3.14159/DX
-        kdiff = 1.0
+!        k1    = 0
+!        k2    =-3.14159/DX
+!        kdiff = 1.0
+!
+!        do while( kdiff > 1.0e-6  )
+!            nk    = (k1+k2)/2
+!            K_VEC = nk
+!            cnk   = nk
+!            call modpop_znajdz_wartosci_wlasne("N",cnk,Emax,.false.)
+!            if(L_M < num ) then
+!                k2 = nk
+!            else
+!                if ( W(num) > Ef  ) then
+!                    k2 = nk
+!                else
+!                    k1 = nk
+!                endif
+!            endif
+!            kdiff = abs( (k2-k1)/k2)
+!        enddo
 
-        do while( kdiff > 1.0e-6  )
-            nk    = (k1+k2)/2
-            K_VEC = nk
-            cnk   = nk
-            call modpop_znajdz_wartosci_wlasne("N",cnk,Emax,.false.)
-            if(L_M < num ) then
-                k2 = nk
-            else
-                if ( W(num) > Ef  ) then
-                    k2 = nk
-                else
-                    k1 = nk
-                endif
-            endif
-            kdiff = abs( (k2-k1)/k2)
-        enddo
-
-
+    	nk  = -K_M_IN(num)
         cnk = nk
         call modpop_znajdz_wartosci_wlasne("V",CNK,Emax,.false.)
 
         Chi_M_OUT(:,num)     = 0
         K_M_OUT(num)         = NK
         Chi_M_OUT(2:N+1,num) = Z(1:N,num)
-        !Chi_M_OUT(:,num) = Z(:,num)
 
         YcY              = sum(abs(Chi_M_OUT(:,num))**2)*DX
         Chi_M_OUT(:,num) = Chi_M_OUT(:,num)/sqrt(YcY)!/SQRT(2*3.14159*K_M_IN(num))
@@ -408,31 +418,32 @@ MODULE modpop
 
  subroutine modpop_znajdz_evan_k_out(num)
         integer, intent(in) :: num
-        double precision    :: K_VEC , k1 , k2 , kdiff , NK
+        !double precision    :: K_VEC , k1 , k2 , kdiff , NK
+        double precision    ::  NK
 
         complex*16        :: cnk
         double precision :: YcY
+!
+!        k1    = 0
+!        k2    =-3.14159/DX
+!        kdiff = 1.0
+!
+!        do while( kdiff > 1.0e-6  )
+!            nk    = (k1+k2)/2
+!            K_VEC = nk
+!            cnk   = nk*II
+!            call modpop_znajdz_wartosci_wlasne("N",cnk,Emax,.false.)
+!            if ( W(num) < Ef  ) then
+!                k2 = nk
+!            else
+!                k1 = nk
+!            endif
+!            kdiff = abs( (k2-k1)/k2)
+!        enddo
 
-        k1    = 0
-        k2    =-3.14159/DX
-        kdiff = 1.0
 
-        do while( kdiff > 1.0e-6  )
-            nk    = (k1+k2)/2
-            K_VEC = nk
-            cnk   = nk*II
-            call modpop_znajdz_wartosci_wlasne("N",cnk,Emax,.false.)
-            if ( W(num) < Ef  ) then
-                k2 = nk
-            else
-                k1 = nk
-            endif
-            kdiff = abs( (k2-k1)/k2)
-        enddo
-
-
-
-        cnk = nk
+		nk  = -K_M_IN(num)
+        cnk = II*nk
         call modpop_znajdz_wartosci_wlasne("V",CNK,Emax,.false.)
 
         Chi_M_OUT(:,num)     = 0
