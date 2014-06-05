@@ -38,6 +38,7 @@ module modsystem
     public :: zrodla,UTOTAL,GFLAGS,GINDEX
     public :: system_inicjalizacja , system_zwalnienie_pamieci , system_inicjalizacja_ukladu
     public :: system_zapisz_do_pliku , system_rozwiaz_problem
+    public :: system_gauss
     public :: TRANS_T,TRANS_R
     contains
 
@@ -309,7 +310,6 @@ module modsystem
         ! zmienne pomocniczne
         integer          :: i,j,itmp,ni,nj,pnj,nn,ln,nzrd
         complex*16       :: post
-
         itmp  = 1
         do i = 1, nx
         do j = 1, ny
@@ -322,7 +322,6 @@ module modsystem
                     itmp = itmp + 1
 
                 elseif( GFLAGS(i,j) == B_NORMAL) then
-
                     cmatA(itmp)   = CMPLX( 2.0/DX/DX + UTOTAL(i,j) - Ef )
                     idxA (itmp,1) = GINDEX(i,j)
                     idxA (itmp,2) = GINDEX(i,j)
@@ -503,7 +502,15 @@ module modsystem
         print*,"W = ", TRANS_R + TRANS_T
 
     end subroutine oblicz_TR
-
+    ! -------------------------------------------------------------------
+    ! Zwraca wartosc rozkladu gaussa w punkcie (x,y) dla gaussa o srodku
+    ! w (xpos,ypos) oraz sigmie = sigma i amplidudzie = amplitude.
+    ! x,y,xpos,ypos - podajemy w indeksach siatki (i,j)
+    ! -------------------------------------------------------------------
+    doubleprecision function system_gauss(x,y,xpos,ypos,sigma,amplitude)
+        doubleprecision :: x,y,xpos,ypos,sigma,amplitude
+            system_gauss = amplitude*exp(-sigma*(( x - xpos )**2+( y - ypos )**2)*DX*DX)
+    end function system_gauss
 
 
     ! ------------------------------------------------------------ -------
