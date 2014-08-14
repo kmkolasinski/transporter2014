@@ -47,6 +47,7 @@ MODULE modpop
       public :: modpop_zapisz_wektory
       public :: modpop_get_km
       public :: modpop_get_chi
+      public :: modpop_calc_modes_from_wfm
       public :: NO_EVAN_MODES
 
 
@@ -590,7 +591,6 @@ MODULE modpop
     endsubroutine modpop_utworz_hamiltonian
 
 
-
     subroutine modpop_zwalnienie_pamieci()
 
 
@@ -642,4 +642,233 @@ MODULE modpop
     end subroutine modpop_get_chi
 
 
+! -----------------------------------------------------------------------------------------------
+!                      Wyznaczanie modow metoda Wave-Function-Matching
+! -----------------------------------------------------------------------------------------------
+    subroutine modpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec)
+        double precision,intent(in)               :: pDX
+        integer,intent(in)                        :: pN
+        double precision,intent(in)               :: pEf
+        double precision,intent(in)               :: pB
+        double precision,intent(in),dimension(pN) :: pUVEC
+
+        complex*16, allocatable , dimension(:,:) :: Mzero,Mdiag,Mham,MB,MA , Mtau
+        integer :: i,j
+        INTEGER :: LDVL, LDVR , LWMAX , LWORK , INFO
+        COMPLEX*16 , dimension(:)   , allocatable  :: ALPHA , BETA , WORK
+        double precision, dimension(:)   , allocatable  :: RWORK
+        COMPLEX*16 , dimension(:,:) , allocatable  :: Z
+        COMPLEX*16 :: DUMMY(1,1),lambda
+        doubleprecision :: kvec
+        bPoziome = .false. ! ustalamy na sztywno zrodla prawo - lewo
+
+
+        DX    = pDX*L2LR
+        N     = pN-2
+        Ef    = pEf/Rd/1000 ! bo Ef w meV
+        t0    = 0.5/DX/DX
+        BZ    = BtoDonorB(pB)
+        hny   = (N+1)/2.0!
+
+        print*,"hny=",hny
+        print*,"N=",N
+        print*,"T=",BtoDonorB(pB)
+
+        if(.not. allocated(Uvec))allocate(Uvec(N))
+
+        do i = 1 , N
+            Uvec(i)        = pUVEC(i+1)/Rd/1000 ! bo Ef w meV
+        enddo
+
+        allocate(Mzero(N,N))
+        allocate(Mtau(N,N))
+        allocate(Mdiag(N,N))
+        allocate(Mham (N,N))
+        allocate(MA (2*N,2*N))
+        allocate(MB (2*N,2*N))
+        allocate(Z (2*N,2*N))
+
+
+        Mzero = 0
+        Mdiag = 0
+        Mham  = 0
+        Mtau  = 0
+
+
+
+        do i = 1 , N
+            Mdiag(i,i) = 1
+            Mtau(i,i)  =  - t0 * exp(II*(DX*DX*BZ*(i-hNY)) )
+
+        enddo
+
+        do i = 1 , N
+            Mham(i,i)   = 4*t0 + Uvec(i) - Ef
+            if(i < N) Mham(i,i+1) = -t0 !* exp(-II*(DX*DX*BZ*(i-hNY)) )
+            if(i > 1) Mham(i,i-1) = -t0 !* exp(+II*(DX*DX*BZ*(i-1-hNY)) )
+
+        enddo
+!        lambda = 0
+!        do i = 1 , N
+!        do j = i , N
+!            lambda = lambda +  abs(Mham(i,j) - conjg(Mham(j,i)))
+!        enddo
+!        enddo
+!        print*,"symetry=",lambda
+!        do i = 1 , N
+!            write(222,"(200f10.6)"),Mham(i,:)
+!        enddo
+
+        MA(1:N,1:N)         =  Mzero
+        MA(N+1:2*N,1:N)     =  Mdiag
+        MA(1:N,N+1:2*N)     =  Mtau
+        MA(N+1:2*N,N+1:2*N) =  Mham
+
+        MB(1:N,1:N)         =  Mdiag
+        MB(N+1:2*N,1:N)     =  Mzero
+        MB(1:N,N+1:2*N)     =  Mzero
+        MB(N+1:2*N,N+1:2*N) = -conjg(Mtau)
+
+
+
+        LWMAX = 100 * N
+        LDVL  = 2  * N
+        LDVR  = 2  * N
+
+        allocate(ALPHA(2*N))
+        allocate(BETA(2*N))
+        allocate(RWORK(8*N))
+        allocate(WORK(LWMAX))
+
+
+
+        LWORK = -1
+
+!        przygotowanie
+        CALL ZGGEV("N","N", 2*N, MA, 2*N, MB,2*N, ALPHA,BETA, &
+    &   DUMMY, 1, Z, LDVR, WORK, LWORK, RWORK, INFO )
+
+        LWORK = MIN(LWMAX, INT( WORK(1)))
+
+        print*, INFO
+        print*, LWORK,WORK(1)
+!        MA(1:N,1:N)         =  Mzero
+!        MA(N+1:2*N,1:N)     =  Mdiag
+!        MA(1:N,N+1:2*N)     =  Mtau
+!        MA(N+1:2*N,N+1:2*N) =  Mham
+!
+!        MB(1:N,1:N)         =  Mdiag
+!        MB(N+1:2*N,1:N)     =  Mzero
+!        MB(1:N,N+1:2*N)     =  Mzero
+!        MB(N+1:2*N,N+1:2*N) = -conjg(Mtau)
+
+        CALL ZGGEV("N","V", 2*N, MA, 2*N, MB , 2*N, ALPHA,BETA, &
+    &   DUMMY, 1, Z, LDVR, WORK, LWORK, RWORK, INFO )
+
+        print*, INFO
+        print*, LWORK
+
+
+        LICZBA_MODOW = 0
+        do i = 1 , 2*N
+            if(abs(Beta(i))>1e-16) then
+                lambda= (ALPHA(i)/BETA(i))
+
+!                print"(i4,12f12.8)",i,abs(lambda),log(lambda)/II/DX*L2LR
+                if(  abs(abs(lambda) - 1.0) < 1.0E-6 ) then
+                    kvec  = log(lambda)/II/DX*L2LR
+                    print"(i4,12f12.8)",i,abs(lambda),log(lambda)/II/DX*L2LR
+                    if(kvec > 0)LICZBA_MODOW = LICZBA_MODOW + 1
+                endif
+            endif
+        enddo
+
+        print*,"Liczba modow:",LICZBA_MODOW
+!
+!
+!        if(LICZBA_MODOW == 0) return;
+!        if(LICZBA_MODOW+NO_EVAN_MODES > N) NO_EVAN_MODES = N  - LICZBA_MODOW
+!        print*,"Liczba modow evanescentnych:",NO_EVAN_MODES
+!
+!        allocate(Chi_m_in (N+2,LICZBA_MODOW+NO_EVAN_MODES))
+!        allocate(K_m_in   (LICZBA_MODOW+NO_EVAN_MODES)  )
+!        allocate(Chi_m_out(N+2,LICZBA_MODOW+NO_EVAN_MODES))
+!        allocate(K_m_out  (LICZBA_MODOW+NO_EVAN_MODES)  )
+!
+!
+!!		call modpop_relacja_dyspersji(8,"rel.txt")
+!
+!        print*,"Wektory (IN):"
+!        do num = 1, LICZBA_MODOW
+!            call modpop_znajdz_k_in(num)
+!        enddo
+!        print*,"EWektory (IN):"
+!        do num = LICZBA_MODOW + 1, LICZBA_MODOW + NO_EVAN_MODES
+!            call modpop_znajdz_evan_k_in(num)
+!        enddo
+!
+!        print*,"Wektory (OUT):"
+!        do num = 1, LICZBA_MODOW
+!            call modpop_znajdz_k_out(num)
+!        enddo
+!        print*,"EWektory (OUT):"
+!        do num = LICZBA_MODOW + 1, LICZBA_MODOW + NO_EVAN_MODES
+!            call modpop_znajdz_evan_k_out(num)
+!        enddo
+!        wypisz = 1
+!
+!
+!
+!!        print*,1.0/dx/dx/2*Rd*1000.0
+!!        print*,dx*dx*BZ*LR2L
+!        !call modpop_zapisz_wektory(7,"mod.txt",0.0D0,1.0D0)
+!
+!
+!
+!
+!
+!
+
+
+
+
+
+
+
+
+        deallocate(ALPHA)
+        deallocate(BETA)
+        deallocate(RWORK)
+        deallocate(WORK)
+        deallocate(Z)
+
+        deallocate(Mzero)
+        deallocate(Mdiag)
+        deallocate(Mham )
+        deallocate(MA   )
+        deallocate(MB   )
+        deallocate(Uvec )
+
+    end subroutine modpop_calc_modes_from_wfm
+
+
 END MODULE modpop
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

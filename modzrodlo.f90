@@ -240,6 +240,7 @@ contains
             pUVEC(i) = pUTOTAL(pX1,pY1 + i - 1) !*1000*Rd ! wracamy do jed atomowych bo modpop takie potrzebuje
         enddo
         call modpop_inicjalizacja(pDX,N,pEf,pBz,pUVEC)
+        call modpop_calc_modes_from_wfm(pDX,N,pEf,pBz,pUVEC)
         call modpop_liczba_podpasm(lModow)
         !call modpop_relacja_dyspersji(6,"rel.txt")
         call zrodlo%zrodlo_alokuj_pamiec(N,lModow,0)
