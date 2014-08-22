@@ -15,25 +15,27 @@ implicit none
     ! przechowuje informacje o zrodle
     type czrodlo
         integer :: N ! liczba oczek siatki
-        logical :: bKierunek      ! ustala zwrot zrodla, 1 - w kierunku dodatnich wartosci x lub y, 0 - przeciwnie
-        double precision :: hnY   ! wysokosc zrodla w oczkach siatki, moze byc polowkowa
+        integer :: bKierunek      ! ustala zwrot zrodla, 1 - w kierunku dodatnich wartosci x lub y, 0 - przeciwnie
+        double precision :: hnY , hnX   ! wysokosc zrodla w oczkach siatki, moze byc polowkowa
         double precision,dimension(2) :: r1  ! nie uzywane w programie polozenie pierwszego punktu w nm
         double precision,dimension(2) :: r2  ! nie uzywane w programie polozenie ostatniego punktu w nm
         integer,dimension(:,:),allocatable :: polozenia; ! wekor polozen (n,1) ,(n,2) na siatce numerycznej mapowanie na indeks
                                                          ! bedzie odbywac sie przez tablice GINDEX(i,j)
         complex*16,dimension(:,:),allocatable     :: Chi_m_in ! macierz modow wchodzacych, (N,M) - M liczba modow
         complex*16,dimension(:,:),allocatable     :: Chi_m_out! mody wychodzace
-        double precision,dimension(:),allocatable :: k_m_in   ! wektory falowe zwiazane z modami wchodz.
-        double precision,dimension(:),allocatable :: k_m_out  ! z wychodzacymi
+        complex*16,dimension(:),allocatable       :: k_m_in   ! wektory falowe zwiazane z modami wchodz.
+        complex*16,dimension(:),allocatable       :: k_m_out  ! z wychodzacymi
+        complex*16,dimension(:),allocatable       :: deltamk  ! tablica pomocnicza przyspieszajaca liczenie elementow macierzowych
         integer                                   :: liczba_modow ! liczba dostepnym w zrodle modow
         integer                                   :: liczba_evans ! liczba modow evanescentnych
         complex*16,dimension(:),allocatable       :: ck       ! amplitudy wchodzace
         complex*16,dimension(:),allocatable       :: dk       ! amplitudy odbite
         doubleprecision,dimension(:),allocatable  :: Jin,Jout ! prady wejsciowe zwiazane z ck i wyjsciowe - dk
-        integer                                   :: rozbieg  ! zakres rzutowania w procesie wyznaczania ck, dk
         complex*16,dimension(200,200)             :: m_r,m_t  ! macierz wspolczynnikow odbicia i transmisji
         complex*16,dimension(:,:),allocatable     :: Aij
         complex*16,dimension(:,:),allocatable     :: Sij
+        complex*16,dimension(:,:),allocatable     :: SijChiAuxMat ! macierz pomocnicza zavierajaca iloczyny macierzy Sij i Wektorow Chi
+        complex*16,dimension(:),allocatable       :: SijAijCkAuxVec ! pomocniczy wektor z obliczonymi iloczynami
         complex*16,dimension(:),allocatable       :: Fj ! wektor wyrazow wolnych
         logical :: bZaalokowane = .false. ! flaga ktora mowi o tym czy zrodlo ma juz zaalokowana pamiec
         contains
@@ -69,13 +71,16 @@ contains
         if(allocated(zrodlo%Chi_m_out)) deallocate(zrodlo%Chi_m_out);
         if(allocated(zrodlo%k_m_in))    deallocate(zrodlo%k_m_in);
         if(allocated(zrodlo%k_m_out))   deallocate(zrodlo%k_m_out);
+        if(allocated(zrodlo%deltamk))   deallocate(zrodlo%deltamk);
         if(allocated(zrodlo%ck))        deallocate(zrodlo%ck);
         if(allocated(zrodlo%dk))        deallocate(zrodlo%dk);
         if(allocated(zrodlo%Jin))       deallocate(zrodlo%Jin);
         if(allocated(zrodlo%Jout))      deallocate(zrodlo%Jout);
         if(allocated(zrodlo%Aij))       deallocate(zrodlo%Aij);
         if(allocated(zrodlo%Sij))       deallocate(zrodlo%Sij);
+        if(allocated(zrodlo%SijChiAuxMat))       deallocate(zrodlo%SijChiAuxMat);
         if(allocated(zrodlo%Fj))        deallocate(zrodlo%Fj);
+        if(allocated(zrodlo%SijAijCkAuxVec))     deallocate(zrodlo%SijAijCkAuxVec);
 
         zrodlo%bZaalokowane = .false.
 
@@ -104,14 +109,28 @@ contains
         allocate(zrodlo%Chi_m_out(pN,lM+lEvanMods));
         allocate(zrodlo%k_m_in   (lM+lEvanMods));
         allocate(zrodlo%k_m_out  (lM+lEvanMods));
+        allocate(zrodlo%deltamk  (lM+lEvanMods));
         allocate(zrodlo%ck       (lM+lEvanMods));
         allocate(zrodlo%dk       (lM+lEvanMods));
         allocate(zrodlo%Jin      (lM+lEvanMods));
         allocate(zrodlo%Jout     (lM+lEvanMods));
-        allocate(zrodlo%Aij(lM,lM))
-        allocate(zrodlo%Sij(lM,lM))
+        allocate(zrodlo%Aij(lM+lEvanMods,lM))
+        allocate(zrodlo%Sij(lM+lEvanMods,lM+lEvanMods))
+        allocate(zrodlo%SijChiAuxMat(lM+lEvanMods,pN))
         allocate(zrodlo%Fj(pN))
+        allocate(zrodlo%SijAijCkAuxVec(lM+lEvanMods))
 
+
+        zrodlo%k_m_in  = 0
+        zrodlo%k_m_out = 0
+        zrodlo%Chi_m_in  = 0
+        zrodlo%Chi_m_out = 0
+        zrodlo%m_r  = 0
+        zrodlo%m_t  = 0
+        zrodlo%ck   = 0
+        zrodlo%dk   = 0
+        zrodlo%Jin  = 0
+        zrodlo%Jout = 0
         zrodlo%bZaalokowane = .true.
     end subroutine zrodlo_alokuj_pamiec
 
@@ -122,18 +141,18 @@ contains
         print*,"Zrodlo: Wypisywanie informacji o zrodle:"
         print*,"    N       = ",zrodlo%N
         print*,"    L. modow= ",zrodlo%liczba_modow
-        print*,"    Rozbieg = ",zrodlo%rozbieg
+        print*,"    L. evanm= ",zrodlo%liczba_evans
         print*,"    Kierunek= ",zrodlo%bKierunek
         print*,"    HNY     = ",zrodlo%hnY
         write(*,"(A,2f10.4,A)"),"    R1(x,y) = (",zrodlo%r1,")"
         write(*,"(A,2f10.4,A)"),"    R2(x,y) = (",zrodlo%r2,")"
-        print*,"    Mody wejsciowe:"
+        print*,"    Mody wejsciowe/wyjsciowe:"
         do i = 1 , zrodlo%liczba_modow
-            print*,"        Kin [",i,"]=",zrodlo%k_m_in(i)*L2LR
+            print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",zrodlo%k_m_in(i)*L2LR," | ",zrodlo%k_m_out(i)*L2LR
         enddo
-        print*,"    Mody wyjsciowe:"
-        do i = 1 , zrodlo%liczba_modow
-            print*,"        Kout[",i,"]=",zrodlo%k_m_out(i)*L2LR
+        print*,"    Mody wejsciowe/wyjsciowe evanescentne:"
+        do i = zrodlo%liczba_modow + 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+            print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",zrodlo%k_m_in(i)*L2LR," | ",zrodlo%k_m_out(i)*L2LR
         enddo
         endif
     endsubroutine zrodlo_wypisz_info
@@ -145,7 +164,7 @@ contains
         integer :: i
         if(TRANS_DEBUG==.true.) then
         print*, "! ----------------------------------------- !"
-        if(zrodlo%bKierunek == .true. ) then
+        if(zrodlo%bKierunek == ZRODLO_KIERUNEK_PRAWO .or. zrodlo%bKierunek == ZRODLO_KIERUNEK_GORA ) then
             print*, "       ------>       |        <------"
         else
             print*, "       <------       |        ------>"
@@ -163,7 +182,7 @@ contains
         integer :: i
         if(TRANS_DEBUG==.true.) then
         print*, "! ----------------------------------------- !"
-        if(zrodlo%bKierunek == .true. ) then
+        if(zrodlo%bKierunek == ZRODLO_KIERUNEK_PRAWO .or. zrodlo%bKierunek == ZRODLO_KIERUNEK_GORA  ) then
             print*, "        ------>       |        <------"
         else
             print*, "        <------       |        ------>"
@@ -189,16 +208,29 @@ contains
 
     ! -------------------------------------------------------------------------
     ! Zapisuje mody do pliku o nazwie filename, podajemy rozwniez krok siatki w nm
+    ! bSaveEvan - optionalnie mozemy zdecydowac czy chcemy zapisywac evanescente czy tylko
+    ! fale plaskie, domyslnie mody evanescentne nie sa zapisywane
     ! -------------------------------------------------------------------------
-    subroutine zrodlo_zapisz_mody(zrodlo,filename,dx)
+    subroutine zrodlo_zapisz_mody(zrodlo,filename,dx,bSaveEvan)
         class(czrodlo) :: zrodlo
         character(*) :: filename
         double precision :: dx
-        integer :: i
+        logical,optional,intent(in) :: bSaveEvan
+        integer :: i,no_modow
+        logical :: bSaveE
+
         print*,"Zrodlo: Zapisywanie modow do pliku:",filename
         open(4193,file=filename)
+        if(present(bSaveEvan)) then
+            bSaveE = bSaveEvan ! domyslnie nie bedziemy zapisywac modow evanescentym
+        else
+            bSaveE = .false.
+        endif
+        no_modow = zrodlo%liczba_modow
+
         do i = 1 , zrodlo%N
-            write(4193,"(300e20.8)"),zrodlo%polozenia(i,2)*dx,abs(zrodlo%Chi_m_in(i,:))**2,abs(zrodlo%Chi_m_out(i,:))**2
+        if(bSaveE)           write(4193,"(300e20.8)"),zrodlo%polozenia(i,:)*dx,abs(zrodlo%Chi_m_in(i,:))**2,abs(zrodlo%Chi_m_out(i,:))**2
+        if(.not. bSaveE)     write(4193,"(300e20.8)"),zrodlo%polozenia(i,:)*dx,abs(zrodlo%Chi_m_in(i,1:no_modow ))**2,abs(zrodlo%Chi_m_out(i,1:no_modow))**2
         enddo
         close(4193)
     end subroutine zrodlo_zapisz_mody
@@ -207,112 +239,178 @@ contains
     ! --------------------------------------------------------------------
     ! Ustawiamy wczesniej zaalokowane zrodlo przez polecenie systemowe.
     ! Parametry:
-    ! pY1,pYN - polozenia y na siatce numerycznej liczone od 1 do NY
-    ! pX1 - polozenie X zrodla
+    ! pY1,pYN - polozenia y na siatce numerycznej liczone od 1 do NY, w przypadku zrodla poziomego
+    !           oznaczaja polozenia X1 oraz XN
+    ! pX1 - polozenie X zrodla, dla zrodla poziomego polozenie Y1
     ! pDX,pEf,pBz - DX [nm] , Ef [meV] , BZ [T]
-    ! pKierunek - enum ZRODLO_KIERUNEK_PRAWO/LEWO - ustala w ktora skierowane jest zrodlo
-    ! pWejscie  - czy zrodlo jest wejsciowe, czy wyjsciowe (true,false)
-    ! pRozbieg  - liczba oczek siatki brana do liczenia amplitud rozpraszania
+    ! pKierunek - enum ZRODLO_KIERUNEK_PRAWO/LEWO/GORA/DOL - ustala w ktora skierowane jest zrodlo
     ! pUTOTAL   - referencja do potencjalu ukladu
     ! --------------------------------------------------------------------
-    subroutine zrodlo_ustaw(zrodlo,pY1,pYN,pX1,pDX,pEf,pBz,pKierunek,pRozbieg,pUTOTAL)
+    subroutine zrodlo_ustaw(zrodlo,pY1,pYN,pX1,pDX,pEf,pBz,pKierunek,pUTOTAL)
         class(czrodlo)             ::  zrodlo
         integer,intent(in)         ::  pY1,pYN,pX1
         doubleprecision,intent(in) ::  pDx,pEf,pBz
         integer,intent(in)         ::  pKierunek ! enum
-        integer,intent(in)         ::  pRozbieg
         double precision,dimension(:,:) :: pUTOTAL ! calkowity potencjal w [meV]
         double precision :: pUvec(pYN - pY1 + 1)
+
         double precision :: dx, Ef, Bz
         complex*16,dimension(:,:),allocatable :: tempB
         integer :: N ! liczba oczek dla zrodla
-        integer :: lModow
+        integer :: lModow,lModowEvan
         ! zmienne pomocnicze
-        integer :: i,j
+        integer :: i,j,k,ntmp
 
         dx  = pdx*L2LR    ! konwertujemy do jednostek donorowych
         Ef  = pEf/1000.0/Rd
         BZ  = BtoDonorB(pBz)
 
-        N = pYN - pY1 + 1;
+        print*,"Okres B",DonorBtoB(2*3.14159/dx/dx) , "[T]"
 
-        do i = 1 , N
-            pUVEC(i) = pUTOTAL(pX1,pY1 + i - 1) !*1000*Rd ! wracamy do jed atomowych bo modpop takie potrzebuje
-        enddo
-        call modpop_inicjalizacja(pDX,N,pEf,pBz,pUVEC)
-        call modpop_calc_modes_from_wfm(pDX,N,pEf,pBz,pUVEC)
-        call modpop_liczba_podpasm(lModow)
-        !call modpop_relacja_dyspersji(6,"rel.txt")
-        call zrodlo%zrodlo_alokuj_pamiec(N,lModow,0)
+        N = pYN - pY1 + 1; ! to jest tak samo liczone ale zmienne pYN , pY1 maja inna interpretacje
 
-        zrodlo%polozenia(:,1) = pX1
-        do i = 1 , N
-            zrodlo%polozenia(i,2) = pY1 + i - 1
-        enddo
-        ! POBIERAMY MODY POPRZECZNE ORAZ ICH WEKTORY FALOWE
-        call modpop_get_km(lModow,zrodlo%k_m_in,zrodlo%k_m_out)
-        call modpop_get_chi(lModow,N,zrodlo%Chi_m_in,zrodlo%Chi_m_out)
 
-        ! ustawianie parametrow zrodel
-        if(pKierunek == ZRODLO_KIERUNEK_PRAWO) then
-            zrodlo%bKierunek      = .true.
-        else if(pKierunek == ZRODLO_KIERUNEK_LEWO) then
-            zrodlo%bKierunek      = .false.
-        else
-            print*,"Zrodlo: Error nie znany kierunek zrodla. Do wyboru: PRAWO/LEWO"
-            stop
+
+        if( pKierunek == ZRODLO_KIERUNEK_PRAWO .or. pKierunek == ZRODLO_KIERUNEK_LEWO ) then
+            do i = 1 , N
+                pUVEC(i) = pUTOTAL(pX1,pY1 + i - 1)
+            enddo
+            call modpop_calc_modes_from_wfm(pDX,N,pEf,pBz,pUVEC,.true.)
+        else ! dla zrodel gora dol
+            do i = 1 , N
+                pUVEC(i) = pUTOTAL(pY1 + i - 1,pX1)
+            enddo
+            call modpop_calc_modes_from_wfm(pDX,N,pEf,pBz,pUVEC,.false.)
         endif
 
-        zrodlo%r1             = (/pX1,pY1/)*DX
-        zrodlo%r2             = (/pX1,pYN/)*DX
-        zrodlo%hny            = (pYN + pY1)/2.0*DX
-        zrodlo%rozbieg        = pRozbieg
-        zrodlo%m_r  = 0
-        zrodlo%m_t  = 0
-        zrodlo%ck   = 0
-        zrodlo%dk   = 0
-        zrodlo%Jin  = 0
-        zrodlo%Jout = 0
-        call zrodlo%zrodlo_wypisz_info()
+        call modpop_liczba_podpasm(lModow,lModowEvan)
+        print*,"Liczba modow evan=",lModowEvan
+!        lModowEvan = 0
 
+
+        call zrodlo%zrodlo_alokuj_pamiec(N,lModow,lModowEvan)
+        ! POBIERAMY MODY POPRZECZNE ORAZ ICH WEKTORY FALOWE
+        ! pobieramy od razu z evanescentnymi wektorami
+        call modpop_get_km (lModow+lModowEvan,zrodlo%k_m_in,zrodlo%k_m_out)
+        call modpop_get_chi(lModow+lModowEvan,N,zrodlo%Chi_m_in,zrodlo%Chi_m_out)
         ! MODUL RELACJI DYSPERSJI JUZ NIE POTRZEBNY
         call modpop_zwalnienie_pamieci()
 
 
-        if(zrodlo%bKierunek == .true.) then
-        ! ----------------------------------------------------------------------
-        ! Macierze warunkow brzegowych dla zrodel skierowanych w praweo ------>
-        ! Aij    = < X(-i) | X(+j) >
-        ! Sij^-1 = < X(-i) | X(-j) >
-        ! ----------------------------------------------------------------------
-        allocate(tempB(lModow,1))
-        do i = 1 , lModow
-        do j = 1 , lModow
-            zrodlo%Aij(i,j) = sum( conjg(zrodlo%Chi_m_out(:,i))*zrodlo%Chi_m_in (:,j) )*DX
-            zrodlo%Sij(i,j) = sum( conjg(zrodlo%Chi_m_out(:,i))*zrodlo%Chi_m_out(:,j) )*DX
-        end do
-        end do
-        tempB = 1
-        call zgaussj(zrodlo%Sij,lModow,lModow,tempB,1,1)
-        deallocate(tempB)
+        ! ustawianie parametrow zrodel
+        zrodlo%bKierunek = pKierunek
 
-        else
-        ! ----------------------------------------------------------------------
-        ! Macierze warunkow brzegowych dla zrodel skierowanych w lewo  <-------
-        ! Aij    = < X(+i) | X(-j) >
-        ! Sij^-1 = < X(+i) | X(+j) >
-        ! ----------------------------------------------------------------------
-        allocate(tempB(lModow,1))
-        do i = 1 , lModow
-        do j = 1 , lModow
-            zrodlo%Aij(i,j) = sum( conjg(zrodlo%Chi_m_in(:,i))*zrodlo%Chi_m_out(:,j) )*DX
-            zrodlo%Sij(i,j) = sum( conjg(zrodlo%Chi_m_in(:,i))*zrodlo%Chi_m_in (:,j) )*DX
-        end do
-        end do
-        tempB = 1
-        call zgaussj(zrodlo%Sij,lModow,lModow,tempB,1,1)
-        deallocate(tempB)
-        endif ! end of if jaki kierunek zrodla
+        if( pKierunek == ZRODLO_KIERUNEK_PRAWO .or. pKierunek == ZRODLO_KIERUNEK_LEWO ) then
+            zrodlo%polozenia(:,1) = pX1
+            do i = 1 , N
+                zrodlo%polozenia(i,2) = pY1 + i - 1
+            enddo
+            zrodlo%r1             = (/pX1,pY1/)*DX
+            zrodlo%r2             = (/pX1,pYN/)*DX
+            zrodlo%hny            = (pYN + pY1)/2.0*DX
+        else ! dla zrodel gora dol
+            zrodlo%polozenia(:,2) = pX1
+            do i = 1 , N
+                zrodlo%polozenia(i,1) = pY1 + i - 1
+            enddo
+            zrodlo%r1             = (/pY1,pX1/)*DX
+            zrodlo%r2             = (/pYN,pX1/)*DX
+            zrodlo%hnx            = (pYN + pY1)/2.0*DX
+        endif
+
+
+
+        call zrodlo%zrodlo_wypisz_info()
+
+
+
+
+        ntmp =  zrodlo%liczba_modow + zrodlo%liczba_evans
+        select case (zrodlo%bKierunek)
+        ! ---------------------------------------------------------------- !
+        case (ZRODLO_KIERUNEK_PRAWO)
+
+            ! Wzynaczanie wektora pomocniczego
+            do k = 1 , ntmp
+                if( k <= zrodlo%liczba_modow) then
+                    zrodlo%deltamk(k) = 2*II*sin(- zrodlo%k_m_in(k)*DX + DX*Bz*zrodlo%hny )
+                else
+                    zrodlo%deltamk(k) = exp( zrodlo%k_m_out(k)*DX + II*DX*Bz*zrodlo%hny ) - exp( -zrodlo%k_m_out(k)*DX - II*DX*Bz*zrodlo%hny)
+                endif
+            enddo
+            ! ----------------------------------------------------------------------
+            ! Macierze warunkow brzegowych dla zrodel skierowanych w prawo ------>
+            ! Aij    = < X(-i) | X(+j) >
+            ! Sij^-1 = < X(-i) | X(-j) >
+            ! ----------------------------------------------------------------------
+            do i = 1 , ntmp
+            do j = 1 , lModow
+                zrodlo%Aij(i,j) = sum( conjg(zrodlo%Chi_m_out(:,i))*zrodlo%Chi_m_in (:,j) )*DX
+            end do
+            end do
+
+            allocate(tempB(ntmp,1))
+            do i = 1 , ntmp
+            do j = 1 , ntmp
+                zrodlo%Sij(i,j) = sum( conjg(zrodlo%Chi_m_out(:,i))*zrodlo%Chi_m_out(:,j) )*DX
+            end do
+            end do
+            tempB = 1
+            call zgaussj(zrodlo%Sij(1:ntmp,1:ntmp),ntmp,ntmp,tempB(1:ntmp,1),1,1)
+            deallocate(tempB)
+
+            ! Wyznaczanie macierzy pomocniczej zawierajacej iloczyny macierzy Sij i wektora Chi
+            do i = 1 , ntmp
+            do j = 1 , N
+                zrodlo%SijChiAuxMat(i,j) = sum( zrodlo%Sij(i,:)*conjg(zrodlo%Chi_m_out(j,:)) )
+            end do
+            end do
+
+
+        ! ---------------------------------------------------------------- !
+        case (ZRODLO_KIERUNEK_LEWO)
+            ! Wzynaczanie wektora pomocniczego
+            do k = 1 , ntmp
+                if( k <= zrodlo%liczba_modow) then
+                    zrodlo%deltamk(k) = 2*II*sin(+zrodlo%k_m_in(k)*DX + DX*Bz*zrodlo%hny )
+                else
+                    zrodlo%deltamk(k) = exp( zrodlo%k_m_in(k)*DX + II*DX*Bz*zrodlo%hny ) - exp( -zrodlo%k_m_in(k)*DX - II*DX*Bz*zrodlo%hny)
+                endif
+            enddo
+
+            ! ----------------------------------------------------------------------
+            ! Macierze warunkow brzegowych dla zrodel skierowanych w lewo  <-------
+            ! Aij    = < X(+i) | X(-j) >
+            ! Sij^-1 = < X(+i) | X(+j) >
+            ! ----------------------------------------------------------------------
+
+            do i = 1 , ntmp
+            do j = 1 , lModow
+                zrodlo%Aij(i,j) = sum( conjg(zrodlo%Chi_m_in(:,i))*zrodlo%Chi_m_out(:,j) )*DX
+            end do
+            end do
+
+            allocate(tempB(ntmp,1))
+            do i = 1 , ntmp
+            do j = 1 , ntmp
+                zrodlo%Sij(i,j) = sum( conjg(zrodlo%Chi_m_in(:,i))*zrodlo%Chi_m_in (:,j) )*DX
+            end do
+            end do
+            tempB = 1
+            call zgaussj(zrodlo%Sij(1:ntmp,1:ntmp),ntmp,ntmp,tempB(1:ntmp,1),1,1)
+            deallocate(tempB)
+
+            ! Wyznaczanie macierzy pomocniczej zawierajacej iloczyny macierzy Sij i wektora Chi
+            do i = 1 , ntmp
+            do j = 1 , N
+                zrodlo%SijChiAuxMat(i,j) = sum( zrodlo%Sij(i,:)*conjg(zrodlo%Chi_m_in(j,:)) )
+            end do
+            end do
+
+        case default
+            print*,"Modzrodlo:: Nie ma takiego typu zrodla jak",zrodlo%bKierunek
+            stop
+        endselect
 
 
 
@@ -330,73 +428,145 @@ contains
         class(czrodlo)  ::  zrodlo
         doubleprecision :: pdx
         integer         :: i , pi, pj, k , p, q
-        complex*16      :: post , Xkn , deltapk , deltamk
-        doubleprecision :: dx, Ef, Bz , kvec
+        complex*16      :: post , Xkn , deltapk , deltamk , kvec
+        doubleprecision :: dx, Ef, Bz
         dx  = pdx
         Ef  = atomic_Ef/1000.0/Rd
         BZ  = BtoDonorB(atomic_Bz)
 
+        ! obliczanie wektora pomocniczego przy liczeniu wyrazu wolnego
+        ! nie zalezu on od kierunku zrodla
+        do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+            zrodlo%SijAijCkAuxVec(k) = 0
+            do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+            do q = 1 , zrodlo%liczba_modow
+                zrodlo%SijAijCkAuxVec(k) = zrodlo%SijAijCkAuxVec(k) + zrodlo%Sij(k,p)*zrodlo%Aij(p,q)*zrodlo%ck(q)
+            enddo
+            enddo
+        enddo
 
-        if(zrodlo%bKierunek == .true.) then
-        ! -------------------------------------------------------------------
-        ! Wypelniamy wektor wyrazow wolnych dla zrodej skierowanych w prawo
-        !
-        !                        --------------->
-        !
+
         do i = 1 , zrodlo%N
                 zrodlo%Fj(i) = 0
                 pi         =  zrodlo%polozenia(i,1)
                 pj         =  zrodlo%polozenia(i,2)
-                post       = -(0.5/DX/DX)*EXP(II*DX*DX*pj*BZ)
 
-                do k = 1 , zrodlo%liczba_modow
-                    Xkn = 0
-                    do p = 1 , zrodlo%liczba_modow
-                    do q = 1 , zrodlo%liczba_modow
-                        Xkn = Xkn + zrodlo%Sij(k,p)*zrodlo%Aij(p,q)*zrodlo%ck(q)
+                select case (zrodlo%bKierunek)
+                ! ---------------------------------------------------------------- !
+                case (ZRODLO_KIERUNEK_PRAWO)
+                    post             = -(0.5/DX/DX)*EXP(II*DX*DX*pj*BZ)
+                    do k = 1 , zrodlo%liczba_modow
+                        kvec         = zrodlo%k_m_in(k)
+                        deltapk      = 2*II*sin(+kvec*DX + DX*Bz*zrodlo%hny )
+                        zrodlo%Fj(i) = zrodlo%Fj(i) + zrodlo%ck(k)*deltapk*zrodlo%Chi_m_in (i,k)
                     enddo
+                    do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+                        Xkn          = zrodlo%SijAijCkAuxVec(k)
+                        deltamk      = zrodlo%deltamk(k)
+                        zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_out(i,k)
                     enddo
-                    kvec   = zrodlo%k_m_in(k)
-                    deltapk = 2*II*sin(+kvec*DX + DX*Bz*zrodlo%hny )
-                    deltamk = 2*II*sin(-kvec*DX + DX*Bz*zrodlo%hny )
-                    zrodlo%Fj(i) = zrodlo%Fj(i)  &
-                         &   + zrodlo%ck(k)*deltapk*zrodlo%Chi_m_in (i,k)  &
-                         &   - Xkn*       deltamk*zrodlo%Chi_m_out(i,k)
-                     !print*,i,deltapk/2/DX
-                enddo
+                ! ---------------------------------------------------------------- !
+                case (ZRODLO_KIERUNEK_LEWO)
+                        post         = (0.5/DX/DX)*EXP(-II*DX*DX*pj*BZ)
+                    do k = 1 , zrodlo%liczba_modow
+                        kvec         = zrodlo%k_m_in(k)
+                        deltapk      = 2*II*sin(-kvec*DX + DX*Bz*zrodlo%hny )
+                        zrodlo%Fj(i) = zrodlo%Fj(i) + zrodlo%ck(k)*deltapk*zrodlo%Chi_m_out(i,k)
+                    enddo
+                    do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+                        Xkn          = zrodlo%SijAijCkAuxVec(k)
+                        deltamk      = zrodlo%deltamk(k)
+                        zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_in(i,k)
+                    enddo
+                endselect
+
+
                 zrodlo%Fj(i) = zrodlo%Fj(i)*post
-        enddo ! end of do i=1
 
-        else
-        ! -------------------------------------------------------------------
-        ! Wypelniamy wektor wyrazow wolnych dla zrodej skierowanych w lewo
-        !
-        !                        <---------------
-        !
-        do i = 1 , zrodlo%N
-                zrodlo%Fj(i) = 0
-                pi         =  zrodlo%polozenia(i,1)
-                pj         =  zrodlo%polozenia(i,2)
-                post       = (0.5/DX/DX)*EXP(-II*DX*DX*pj*BZ)
-
-                do k = 1 , zrodlo%liczba_modow
-                    Xkn = 0
-                    do p = 1 , zrodlo%liczba_modow
-                    do q = 1 , zrodlo%liczba_modow
-                        Xkn = Xkn + zrodlo%Sij(k,p)*zrodlo%Aij(p,q)*zrodlo%ck(q)
-                    enddo
-                    enddo
-                    kvec   = zrodlo%k_m_in(k)
-                    deltapk = 2*II*sin(+kvec*DX + DX*Bz*zrodlo%hny )
-                    deltamk = 2*II*sin(-kvec*DX + DX*Bz*zrodlo%hny )
-                    zrodlo%Fj(i) = zrodlo%Fj(i)  &
-                         &   + zrodlo%ck(k)*deltamk*zrodlo%Chi_m_out(i,k)  &
-                         &   - Xkn*       deltapk*zrodlo%Chi_m_in (i,k)
-                     !print*,i,deltapk/2/DX
-                enddo
-                zrodlo%Fj(i) = zrodlo%Fj(i)*post
-        enddo ! end of do i=1
-        endif
+        enddo ! end of do i=1, zrodlo%N
+!
+!
+!        if(zrodlo%bKierunek == ZRODLO_KIERUNEK_PRAWO) then
+!        ! -------------------------------------------------------------------
+!        ! Wypelniamy wektor wyrazow wolnych dla zrodej skierowanych w prawo
+!        !
+!        !                        --------------->
+!        !
+!        do i = 1 , zrodlo%N
+!                zrodlo%Fj(i) = 0
+!                pi         =  zrodlo%polozenia(i,1)
+!                pj         =  zrodlo%polozenia(i,2)
+!
+!
+!                post       = -(0.5/DX/DX)*EXP(II*DX*DX*pj*BZ)
+!
+!
+!                do k = 1 , zrodlo%liczba_modow
+!                    kvec    = zrodlo%k_m_in(k)
+!                    deltapk = 2*II*sin(+kvec*DX + DX*Bz*zrodlo%hny )
+!                    zrodlo%Fj(i) = zrodlo%Fj(i) + zrodlo%ck(k)*deltapk*zrodlo%Chi_m_in (i,k)
+!                enddo
+!
+!
+!                do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+!                    Xkn = zrodlo%SijAijCkAuxVec(k)
+!!                    do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+!!                    do q = 1 , zrodlo%liczba_modow
+!!                        Xkn = Xkn + zrodlo%Sij(k,p)*zrodlo%Aij(p,q)*zrodlo%ck(q)
+!!                    enddo
+!!                    enddo
+!
+!                    deltamk = zrodlo%deltamk(k)
+!                    zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_out(i,k)
+!
+!                enddo
+!                zrodlo%Fj(i) = zrodlo%Fj(i)*post
+!
+!        enddo ! end of do i=1, zrodlo%N
+!
+!        else
+!        ! -------------------------------------------------------------------
+!        ! Wypelniamy wektor wyrazow wolnych dla zrodej skierowanych w lewo
+!        !
+!        !                        <---------------
+!        !
+!        do i = 1 , zrodlo%N
+!                zrodlo%Fj(i) = 0
+!                pi         =  zrodlo%polozenia(i,1)
+!                pj         =  zrodlo%polozenia(i,2)
+!                post       = (0.5/DX/DX)*EXP(-II*DX*DX*pj*BZ)
+!
+!
+!                do k = 1 , zrodlo%liczba_modow
+!                    kvec    = zrodlo%k_m_in(k)
+!                    deltapk = 2*II*sin(-kvec*DX + DX*Bz*zrodlo%hny )
+!                    zrodlo%Fj(i) = zrodlo%Fj(i) + zrodlo%ck(k)*deltapk*zrodlo%Chi_m_out(i,k)
+!                enddo
+!
+!
+!                do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+!                    Xkn = zrodlo%SijAijCkAuxVec(k)
+!!                    do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+!!                    do q = 1 , zrodlo%liczba_modow
+!!                        Xkn = Xkn + zrodlo%Sij(k,p)*zrodlo%Aij(p,q)*zrodlo%ck(q)
+!!                    enddo
+!!                    enddo
+!
+!
+!!                    if( k <= zrodlo%liczba_modow) then
+!!                        kvec    = zrodlo%k_m_in(k)
+!!                        deltamk = 2*II*sin(-kvec*DX + DX*Bz*zrodlo%hny )
+!!                    else
+!!                        kvec    = zrodlo%k_m_out(k)
+!!                        deltamk = exp( kvec*DX + II*DX*Bz*zrodlo%hny ) - exp( -kvec*DX - II*DX*Bz*zrodlo%hny)
+!!                    endif
+!                    deltamk = zrodlo%deltamk(k)
+!                    zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_in(i,k)
+!
+!                enddo
+!                zrodlo%Fj(i) = zrodlo%Fj(i)*post
+!        enddo ! end of do i=1
+!        endif
 
     end subroutine zrodlo_oblicz_Fj
 
@@ -413,15 +583,15 @@ contains
         class(czrodlo)  :: zrodlo
         doubleprecision :: pdx
         integer         :: v,i
-        doubleprecision :: dx ,Ef ,Bz ,kvec
+        doubleprecision :: dx ,Ef ,Bz
         integer         :: k,p
-        complex*16      :: Xkn , deltamk , deltapk
+        complex*16      :: Xkn , deltamk , deltapk , kvec , tmpXkn
 
         dx  = pdx
         Ef  = atomic_Ef/1000.0/Rd
         BZ  = BtoDonorB(atomic_Bz)
 
-        if(zrodlo%bKierunek == .true.) then
+        if(zrodlo%bKierunek == ZRODLO_KIERUNEK_PRAWO) then
         ! -----------------------------------------------------------------
         !       Wyznaczamy alpha(v,i) dla wejsc skierowanych w prawo
         !
@@ -429,13 +599,22 @@ contains
         !
         ! -----------------------------------------------------------------
             Xkn  = 0
-            do k = 1 , zrodlo%liczba_modow
-                kvec = zrodlo%k_m_in(k)
-                deltamk = 2*II*sin(-kvec*DX + DX*Bz*zrodlo%hny )
-            do p = 1 , zrodlo%liczba_modow
-                Xkn = Xkn + deltamk*zrodlo%Chi_m_out(v,k)*zrodlo%Sij(k,p)*conjg(zrodlo%Chi_m_out(i,p))
+            do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+!            if( k <= zrodlo%liczba_modow) then
+!                kvec    = zrodlo%k_m_in(k)
+!                deltamk = 2*II*sin(-kvec*DX + DX*Bz*zrodlo%hny )
+!            else
+!                kvec    = zrodlo%k_m_out(k)
+!                deltamk = exp( kvec*DX + II*DX*Bz*zrodlo%hny ) - exp( -kvec*DX - II*DX*Bz*zrodlo%hny)
+!            endif
+!            tmpXkn = 0
+!            do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+!                tmpXkn = tmpXkn + zrodlo%Sij(k,p)*conjg(zrodlo%Chi_m_out(i,p))
+!!                Xkn = Xkn + deltamk*zrodlo%Chi_m_out(v,k)*zrodlo%Sij(k,p)*conjg(zrodlo%Chi_m_out(i,p))
+!            enddo
+                Xkn = Xkn + zrodlo%deltamk(k)*zrodlo%Chi_m_out(v,k)*zrodlo%SijChiAuxMat(k,i);
             enddo
-            enddo
+
             zrodlo_alfa_v_i = Xkn*dx
 
         else
@@ -445,15 +624,33 @@ contains
         !                       <---------------------
         !
         ! -----------------------------------------------------------------
+!            Xkn  = 0
+!            do k = 1 , zrodlo%liczba_modow
+!                kvec = zrodlo%k_m_in(k)
+!                deltapk = 2*II*sin(kvec*DX + DX*Bz*zrodlo%hny )
+!            do p = 1 , zrodlo%liczba_modow
+!                Xkn = Xkn + deltapk*zrodlo%Chi_m_in(v,k)*zrodlo%Sij(k,p)*conjg(zrodlo%Chi_m_in(i,p))
+!            enddo
+!            enddo
+!            zrodlo_alfa_v_i = Xkn*dx
+
             Xkn  = 0
-            do k = 1 , zrodlo%liczba_modow
-                kvec = zrodlo%k_m_in(k)
-                deltapk = 2*II*sin(kvec*DX + DX*Bz*zrodlo%hny )
-            do p = 1 , zrodlo%liczba_modow
-                Xkn = Xkn + deltapk*zrodlo%Chi_m_in(v,k)*zrodlo%Sij(k,p)*conjg(zrodlo%Chi_m_in(i,p))
+            do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+!            if( k <= zrodlo%liczba_modow) then
+!                kvec    = zrodlo%k_m_in(k)
+!                deltamk = 2*II*sin(kvec*DX + DX*Bz*zrodlo%hny )
+!            else
+!                kvec    = zrodlo%k_m_out(k)
+!                deltamk = exp( kvec*DX + II*DX*Bz*zrodlo%hny ) - exp( -kvec*DX - II*DX*Bz*zrodlo%hny)
+!            endif
+!            do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+!                Xkn = Xkn + deltamk*zrodlo%Chi_m_in(v,k)*zrodlo%Sij(k,p)*conjg(zrodlo%Chi_m_in(i,p))
+!            enddo
+                Xkn = Xkn + zrodlo%deltamk(k)*zrodlo%Chi_m_in(v,k)*zrodlo%SijChiAuxMat(k,i);
             enddo
-            enddo
+
             zrodlo_alfa_v_i = Xkn*dx
+
 
         endif
     end function zrodlo_alfa_v_i
@@ -468,7 +665,7 @@ contains
         integer :: p,q,k,i,pi,pj
         complex*16 :: dk , alpha_p, beta_p
 
-        if(zrodlo%bKierunek == .true.) then
+        if(zrodlo%bKierunek == ZRODLO_KIERUNEK_PRAWO) then
         ! ------------------------------------------------------------------
         !
         !                          <----------------
@@ -476,7 +673,7 @@ contains
         ! ------------------------------------------------------------------
         do k = 1 , zrodlo%liczba_modow
             dk = 0
-            do p = 1 , zrodlo%liczba_modow
+            do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
                 alpha_p = 0
                 do i = 1 , zrodlo%N
                     pi   = zrodlo%polozenia(i,1)
@@ -499,7 +696,7 @@ contains
         ! ------------------------------------------------------------------
             do k = 1 , zrodlo%liczba_modow
                 dk = 0
-                do p = 1 , zrodlo%liczba_modow
+                do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
                     alpha_p = 0
                     do i = 1 , zrodlo%N
                         pi   = zrodlo%polozenia(i,1)
@@ -532,7 +729,7 @@ contains
 
         BZ  = BtoDonorB(atomic_Bz)
 
-        if(zrodlo%bKierunek == .true. ) then
+        if(zrodlo%bKierunek == ZRODLO_KIERUNEK_PRAWO ) then
         ! ------------------------------------------------------------------
         !
         !                          ---------------->
