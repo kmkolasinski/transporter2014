@@ -573,7 +573,8 @@ MODULE modpop
         allocate(Chi_m_out(N+2,N))
         allocate(K_m_out  (N)   )
 
-
+        Chi_m_in  = 0
+        Chi_m_out = 0
         print*,""
         print*,"WEKTORY FALOWE (IN/OUT):"
 
