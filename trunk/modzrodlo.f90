@@ -143,6 +143,7 @@ contains
         print*,"    L. modow= ",zrodlo%liczba_modow
         print*,"    L. evanm= ",zrodlo%liczba_evans
         print*,"    Kierunek= ",zrodlo%bKierunek
+        print*,"    HNX     = ",zrodlo%hnX
         print*,"    HNY     = ",zrodlo%hnY
         write(*,"(A,2f10.4,A)"),"    R1(x,y) = (",zrodlo%r1,")"
         write(*,"(A,2f10.4,A)"),"    R2(x,y) = (",zrodlo%r2,")"
@@ -322,6 +323,8 @@ contains
         call zrodlo%zrodlo_wypisz_info()
 
 
+
+
         ntmp =  zrodlo%liczba_modow + zrodlo%liczba_evans
         select case (zrodlo%bKierunek)
         ! ---------------------------------------------------------------- !
@@ -403,7 +406,43 @@ contains
                 zrodlo%SijChiAuxMat(i,j) = sum( zrodlo%Sij(i,:)*conjg(zrodlo%Chi_m_in(j,:)) )
             end do
             end do
+            ! ---------------------------------------------------------------- !
+        case (ZRODLO_KIERUNEK_GORA)
+            ! Wzynaczanie wektora pomocniczego
+            do k = 1 , ntmp
+                if( k <= zrodlo%liczba_modow) then
+                    zrodlo%deltamk(k) = 2*II*sin(- zrodlo%k_m_in(k)*DX + DX*Bz*zrodlo%hny )
+                else
+                    zrodlo%deltamk(k) = exp( zrodlo%k_m_out(k)*DX + II*DX*Bz*zrodlo%hny ) - exp( -zrodlo%k_m_out(k)*DX - II*DX*Bz*zrodlo%hny)
+                endif
+            enddo
+            ! ----------------------------------------------------------------------
+            ! Macierze warunkow brzegowych dla zrodel skierowanych w prawo ------>
+            ! Aij    = < X(-i) | X(+j) >
+            ! Sij^-1 = < X(-i) | X(-j) >
+            ! ----------------------------------------------------------------------
+            do i = 1 , ntmp
+            do j = 1 , lModow
+                zrodlo%Aij(i,j) = sum( conjg(zrodlo%Chi_m_out(:,i))*zrodlo%Chi_m_in (:,j) )*DX
+            end do
+            end do
 
+            allocate(tempB(ntmp,1))
+            do i = 1 , ntmp
+            do j = 1 , ntmp
+                zrodlo%Sij(i,j) = sum( conjg(zrodlo%Chi_m_out(:,i))*zrodlo%Chi_m_out(:,j) )*DX
+            end do
+            end do
+            tempB = 1
+            call zgaussj(zrodlo%Sij(1:ntmp,1:ntmp),ntmp,ntmp,tempB(1:ntmp,1),1,1)
+            deallocate(tempB)
+
+            ! Wyznaczanie macierzy pomocniczej zawierajacej iloczyny macierzy Sij i wektora Chi
+            do i = 1 , ntmp
+            do j = 1 , N
+                zrodlo%SijChiAuxMat(i,j) = sum( zrodlo%Sij(i,:)*conjg(zrodlo%Chi_m_out(j,:)) )
+            end do
+            end do
         case default
             print*,"Modzrodlo:: Nie ma takiego typu zrodla jak",zrodlo%bKierunek
             stop
@@ -485,6 +524,7 @@ contains
                         deltamk      = zrodlo%deltamk(k)
                         zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_in(i,k)
                     enddo
+
                 endselect
 
 
@@ -509,7 +549,7 @@ contains
         class(czrodlo)  :: zrodlo
         doubleprecision :: pdx
         integer         :: v,i
-        doubleprecision :: dx ,Ef ,Bz
+        doubleprecision :: dx ,Ef ,Bz , bpart
         integer         :: k,p
         complex*16      :: Xkn , deltamk , deltapk , kvec , tmpXkn
 
@@ -527,6 +567,7 @@ contains
         !
         ! -----------------------------------------------------------------
         case (ZRODLO_KIERUNEK_PRAWO)
+
             do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
                 Xkn = Xkn + zrodlo%deltamk(k)*zrodlo%Chi_m_out(v,k)*zrodlo%SijChiAuxMat(k,i);
             enddo
@@ -540,10 +581,28 @@ contains
             do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
                 Xkn = Xkn + zrodlo%deltamk(k)*zrodlo%Chi_m_in(v,k)*zrodlo%SijChiAuxMat(k,i);
             enddo
+
+
+
+        case (ZRODLO_KIERUNEK_GORA)
+
+            bpart = DX*Bz*( zrodlo%polozenia(v,1)*dx -  zrodlo%hnx)
+
+            do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+
+                deltamk = 0
+                if( k <= zrodlo%liczba_modow) then
+                    deltamk = 2*II*sin( -zrodlo%k_m_in(k)*DX + bpart )
+                else
+                    deltamk = exp( zrodlo%k_m_out(k)*DX + II*bpart ) - exp( -zrodlo%k_m_out(k)*DX - II*bpart)
+                endif
+
+
+                Xkn = Xkn + deltamk*zrodlo%Chi_m_out(v,k)*zrodlo%SijChiAuxMat(k,i);
+            enddo
         endselect
 
         zrodlo_alfa_v_i = Xkn*dx
-
 
     end function zrodlo_alfa_v_i
 
@@ -562,7 +621,7 @@ contains
             dk = 0
             do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
                 alpha_p = 0
-                do i = 1 , zrodlo%N
+                do i = 2 , zrodlo%N-1
                     pi   = zrodlo%polozenia(i,1)
                     pj   = zrodlo%polozenia(i,2)
 

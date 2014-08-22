@@ -273,7 +273,7 @@ module modsystem
         zrodla(nrz)%ck(mod_in) = 1
         call zrodla(nrz)%zrodlo_oblicz_Fj(dx)
         VPHI = 0
-        do i = 1 , zrodla(nrz)%N
+        do i = 2 , zrodla(nrz)%N - 1
             ni = zrodla(nrz)%polozenia(i,1)
             nj = zrodla(nrz)%polozenia(i,2)
             VPHI(GINDEX(ni,nj)) = zrodla(nrz)%Fj(i)
@@ -350,7 +350,7 @@ module modsystem
     subroutine wypelnij_macierz()
 
         ! zmienne pomocniczne
-        integer          :: i,j,itmp,ni,nj,pnj,nn,ln,nzrd
+        integer          :: i,j,itmp,ni,nj,pnj,nn,ln,nzrd,pni
         complex*16       :: post
         itmp  = 1
         do i = 1, nx
@@ -395,10 +395,10 @@ module modsystem
                 else if( GFLAGS(i,j) == B_WEJSCIE) then
                     nzrd = ZFLAGS(i,j)
 
+
+
                     ni   = i
                     nj   = j ! globalne polozenia na siatce
-                    ln   = GINDEX(i,j) - GINDEX(i,zrodla(nzrd)%polozenia(1,2)) + 1 ! lokalny indeks
-
 
                     select case (zrodla(nzrd)%bKierunek)
                     ! ------------------------------------------------------------------
@@ -408,6 +408,9 @@ module modsystem
                     !
                     ! ------------------------------------------------------------------
                     case (ZRODLO_KIERUNEK_PRAWO)
+                        ln   = j - zrodla(nzrd)%polozenia(1,2) + 1
+
+
                         cmatA(itmp)   = CMPLX(-0.5/DX/DX*2*cos(DX*DX*(nj)*BZ))
                         idxA (itmp,1) = GINDEX(i  ,j)
                         idxA (itmp,2) = GINDEX(i+1,j)
@@ -420,11 +423,26 @@ module modsystem
                     !
                     ! ------------------------------------------------------------------
                     case (ZRODLO_KIERUNEK_LEWO)
+
+                        ln   = j - zrodla(nzrd)%polozenia(1,2) + 1
+
                         cmatA(itmp)   = CMPLX(-0.5/DX/DX*2*cos(DX*DX*(nj)*BZ))
                         idxA (itmp,1) = GINDEX(i  ,j)
                         idxA (itmp,2) = GINDEX(i-1,j)
                         itmp = itmp + 1
                         post =-0.5/DX/DX*(EXP(-II*DX*DX*(nj)*BZ))
+
+                    case (ZRODLO_KIERUNEK_GORA)
+
+                        ln   = i - zrodla(nzrd)%polozenia(1,1) + 1
+
+                        cmatA(itmp)   = CMPLX(-0.5/DX/DX*2*cos(DX*DX*(nj)*BZ))
+                        idxA (itmp,1) = GINDEX(i  ,j)
+                        idxA (itmp,2) = GINDEX(i,j+1)
+                        itmp = itmp + 1
+
+
+                        post = 0.5/DX/DX*(EXP(+II*DX*DX*(nj)*BZ))
                     endselect
 
                     select case (zrodla(nzrd)%bKierunek)
@@ -462,6 +480,44 @@ module modsystem
                         cmatA(itmp)  = post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
                         idxA(itmp,1) = GINDEX(ni,nj)
                         idxA(itmp,2) = GINDEX(ni,pnj)
+                        itmp = itmp + 1
+                    endif
+                    enddo
+                    ! ------------------------------------------------------------------
+                    !
+                    !                      <------------------------
+                    !                      ------------------------>
+                    !
+                    ! ------------------------------------------------------------------
+                    case (ZRODLO_KIERUNEK_GORA,ZRODLO_KIERUNEK_DOL)
+                    do nn = 2 , zrodla(nzrd)%N - 1
+                    pni   = zrodla(nzrd)%polozenia(nn,1)
+
+                    if( ln == nn  ) then
+
+                        cmatA(itmp)   = CMPLX( 2.0/DX/DX + UTOTAL(i,j) - Ef ) &
+                           & + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA (itmp,1) = GINDEX(ni,nj)
+                        idxA (itmp,2) = GINDEX(pni,nj)
+                        itmp = itmp + 1
+
+                    else if( nn == ln+1  ) then
+                        cmatA(itmp) = CMPLX(-0.5/DX/DX) &
+                        &   + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA(itmp,1) = GINDEX(ni,nj)
+                        idxA(itmp,2) = GINDEX(pni,nj)
+                        itmp = itmp + 1
+                    else if( nn == ln-1  ) then
+
+                        cmatA(itmp) = CMPLX(-0.5/DX/DX) &
+                        &   + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA(itmp,1) = GINDEX(ni,nj)
+                        idxA(itmp,2) = GINDEX(pni,nj)
+                        itmp = itmp + 1
+                    else
+                        cmatA(itmp)  = post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
+                        idxA(itmp,1) = GINDEX(ni,nj)
+                        idxA(itmp,2) = GINDEX(pni,nj)
                         itmp = itmp + 1
                     endif
                     enddo
