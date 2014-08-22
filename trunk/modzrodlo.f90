@@ -319,10 +319,7 @@ contains
         endif
 
 
-
         call zrodlo%zrodlo_wypisz_info()
-
-
 
 
         ntmp =  zrodlo%liczba_modow + zrodlo%liczba_evans
@@ -416,6 +413,8 @@ contains
 
     end subroutine zrodlo_ustaw
 
+
+
     ! --------------------------------------------------------------------
     ! Oblicza wartosci dla wektora wyrazow wolnych jak rozwiazywany jest
     ! uklad rownan na Psi(u,v). Jako argument podajemy jedynie dx w
@@ -453,6 +452,10 @@ contains
 
                 select case (zrodlo%bKierunek)
                 ! ---------------------------------------------------------------- !
+                ! Wypelniamy wektor wyrazow wolnych dla zrodej skierowanych w prawo
+                !
+                !                        --------------->
+                !
                 case (ZRODLO_KIERUNEK_PRAWO)
                     post             = -(0.5/DX/DX)*EXP(II*DX*DX*pj*BZ)
                     do k = 1 , zrodlo%liczba_modow
@@ -466,6 +469,10 @@ contains
                         zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_out(i,k)
                     enddo
                 ! ---------------------------------------------------------------- !
+                ! Wypelniamy wektor wyrazow wolnych dla zrodej skierowanych w lewo
+                !
+                !                        <---------------
+                !
                 case (ZRODLO_KIERUNEK_LEWO)
                         post         = (0.5/DX/DX)*EXP(-II*DX*DX*pj*BZ)
                     do k = 1 , zrodlo%liczba_modow
@@ -484,91 +491,10 @@ contains
                 zrodlo%Fj(i) = zrodlo%Fj(i)*post
 
         enddo ! end of do i=1, zrodlo%N
-!
-!
-!        if(zrodlo%bKierunek == ZRODLO_KIERUNEK_PRAWO) then
-!        ! -------------------------------------------------------------------
-!        ! Wypelniamy wektor wyrazow wolnych dla zrodej skierowanych w prawo
-!        !
-!        !                        --------------->
-!        !
-!        do i = 1 , zrodlo%N
-!                zrodlo%Fj(i) = 0
-!                pi         =  zrodlo%polozenia(i,1)
-!                pj         =  zrodlo%polozenia(i,2)
-!
-!
-!                post       = -(0.5/DX/DX)*EXP(II*DX*DX*pj*BZ)
-!
-!
-!                do k = 1 , zrodlo%liczba_modow
-!                    kvec    = zrodlo%k_m_in(k)
-!                    deltapk = 2*II*sin(+kvec*DX + DX*Bz*zrodlo%hny )
-!                    zrodlo%Fj(i) = zrodlo%Fj(i) + zrodlo%ck(k)*deltapk*zrodlo%Chi_m_in (i,k)
-!                enddo
-!
-!
-!                do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-!                    Xkn = zrodlo%SijAijCkAuxVec(k)
-!!                    do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-!!                    do q = 1 , zrodlo%liczba_modow
-!!                        Xkn = Xkn + zrodlo%Sij(k,p)*zrodlo%Aij(p,q)*zrodlo%ck(q)
-!!                    enddo
-!!                    enddo
-!
-!                    deltamk = zrodlo%deltamk(k)
-!                    zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_out(i,k)
-!
-!                enddo
-!                zrodlo%Fj(i) = zrodlo%Fj(i)*post
-!
-!        enddo ! end of do i=1, zrodlo%N
-!
-!        else
-!        ! -------------------------------------------------------------------
-!        ! Wypelniamy wektor wyrazow wolnych dla zrodej skierowanych w lewo
-!        !
-!        !                        <---------------
-!        !
-!        do i = 1 , zrodlo%N
-!                zrodlo%Fj(i) = 0
-!                pi         =  zrodlo%polozenia(i,1)
-!                pj         =  zrodlo%polozenia(i,2)
-!                post       = (0.5/DX/DX)*EXP(-II*DX*DX*pj*BZ)
-!
-!
-!                do k = 1 , zrodlo%liczba_modow
-!                    kvec    = zrodlo%k_m_in(k)
-!                    deltapk = 2*II*sin(-kvec*DX + DX*Bz*zrodlo%hny )
-!                    zrodlo%Fj(i) = zrodlo%Fj(i) + zrodlo%ck(k)*deltapk*zrodlo%Chi_m_out(i,k)
-!                enddo
-!
-!
-!                do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-!                    Xkn = zrodlo%SijAijCkAuxVec(k)
-!!                    do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-!!                    do q = 1 , zrodlo%liczba_modow
-!!                        Xkn = Xkn + zrodlo%Sij(k,p)*zrodlo%Aij(p,q)*zrodlo%ck(q)
-!!                    enddo
-!!                    enddo
-!
-!
-!!                    if( k <= zrodlo%liczba_modow) then
-!!                        kvec    = zrodlo%k_m_in(k)
-!!                        deltamk = 2*II*sin(-kvec*DX + DX*Bz*zrodlo%hny )
-!!                    else
-!!                        kvec    = zrodlo%k_m_out(k)
-!!                        deltamk = exp( kvec*DX + II*DX*Bz*zrodlo%hny ) - exp( -kvec*DX - II*DX*Bz*zrodlo%hny)
-!!                    endif
-!                    deltamk = zrodlo%deltamk(k)
-!                    zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_in(i,k)
-!
-!                enddo
-!                zrodlo%Fj(i) = zrodlo%Fj(i)*post
-!        enddo ! end of do i=1
-!        endif
 
     end subroutine zrodlo_oblicz_Fj
+
+
 
     ! --------------------------------------------------------------------
     ! Oblicza wyraz alpha(v,i) dany wzrorem:
@@ -591,68 +517,34 @@ contains
         Ef  = atomic_Ef/1000.0/Rd
         BZ  = BtoDonorB(atomic_Bz)
 
-        if(zrodlo%bKierunek == ZRODLO_KIERUNEK_PRAWO) then
+        Xkn  = 0
+
+        select case (zrodlo%bKierunek)
         ! -----------------------------------------------------------------
         !       Wyznaczamy alpha(v,i) dla wejsc skierowanych w prawo
         !
         !                       --------------------->
         !
         ! -----------------------------------------------------------------
-            Xkn  = 0
+        case (ZRODLO_KIERUNEK_PRAWO)
             do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-!            if( k <= zrodlo%liczba_modow) then
-!                kvec    = zrodlo%k_m_in(k)
-!                deltamk = 2*II*sin(-kvec*DX + DX*Bz*zrodlo%hny )
-!            else
-!                kvec    = zrodlo%k_m_out(k)
-!                deltamk = exp( kvec*DX + II*DX*Bz*zrodlo%hny ) - exp( -kvec*DX - II*DX*Bz*zrodlo%hny)
-!            endif
-!            tmpXkn = 0
-!            do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-!                tmpXkn = tmpXkn + zrodlo%Sij(k,p)*conjg(zrodlo%Chi_m_out(i,p))
-!!                Xkn = Xkn + deltamk*zrodlo%Chi_m_out(v,k)*zrodlo%Sij(k,p)*conjg(zrodlo%Chi_m_out(i,p))
-!            enddo
                 Xkn = Xkn + zrodlo%deltamk(k)*zrodlo%Chi_m_out(v,k)*zrodlo%SijChiAuxMat(k,i);
             enddo
-
-            zrodlo_alfa_v_i = Xkn*dx
-
-        else
         ! -----------------------------------------------------------------
         !       Wyznaczamy alpha(v,i) dla wejsc skierowanych w lewo
         !
         !                       <---------------------
         !
         ! -----------------------------------------------------------------
-!            Xkn  = 0
-!            do k = 1 , zrodlo%liczba_modow
-!                kvec = zrodlo%k_m_in(k)
-!                deltapk = 2*II*sin(kvec*DX + DX*Bz*zrodlo%hny )
-!            do p = 1 , zrodlo%liczba_modow
-!                Xkn = Xkn + deltapk*zrodlo%Chi_m_in(v,k)*zrodlo%Sij(k,p)*conjg(zrodlo%Chi_m_in(i,p))
-!            enddo
-!            enddo
-!            zrodlo_alfa_v_i = Xkn*dx
-
-            Xkn  = 0
+        case (ZRODLO_KIERUNEK_LEWO)
             do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-!            if( k <= zrodlo%liczba_modow) then
-!                kvec    = zrodlo%k_m_in(k)
-!                deltamk = 2*II*sin(kvec*DX + DX*Bz*zrodlo%hny )
-!            else
-!                kvec    = zrodlo%k_m_out(k)
-!                deltamk = exp( kvec*DX + II*DX*Bz*zrodlo%hny ) - exp( -kvec*DX - II*DX*Bz*zrodlo%hny)
-!            endif
-!            do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-!                Xkn = Xkn + deltamk*zrodlo%Chi_m_in(v,k)*zrodlo%Sij(k,p)*conjg(zrodlo%Chi_m_in(i,p))
-!            enddo
                 Xkn = Xkn + zrodlo%deltamk(k)*zrodlo%Chi_m_in(v,k)*zrodlo%SijChiAuxMat(k,i);
             enddo
+        endselect
 
-            zrodlo_alfa_v_i = Xkn*dx
+        zrodlo_alfa_v_i = Xkn*dx
 
 
-        endif
     end function zrodlo_alfa_v_i
 
 
@@ -665,12 +557,7 @@ contains
         integer :: p,q,k,i,pi,pj
         complex*16 :: dk , alpha_p, beta_p
 
-        if(zrodlo%bKierunek == ZRODLO_KIERUNEK_PRAWO) then
-        ! ------------------------------------------------------------------
-        !
-        !                          <----------------
-        !
-        ! ------------------------------------------------------------------
+
         do k = 1 , zrodlo%liczba_modow
             dk = 0
             do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
@@ -678,41 +565,33 @@ contains
                 do i = 1 , zrodlo%N
                     pi   = zrodlo%polozenia(i,1)
                     pj   = zrodlo%polozenia(i,2)
-                    alpha_p = alpha_p + dx*conjg(zrodlo%Chi_m_out(i,p))*VPHI(GINDEX(pi,pj))
+
+                    select case (zrodlo%bKierunek)
+                    ! ------------------------------------------------------------------
+                    !
+                    !                          <----------------
+                    !
+                    ! ------------------------------------------------------------------
+                    case (ZRODLO_KIERUNEK_PRAWO)
+                        alpha_p = alpha_p + dx*conjg(zrodlo%Chi_m_out(i,p))*VPHI(GINDEX(pi,pj))
+                    ! ------------------------------------------------------------------
+                    !
+                    !                          ---------------->
+                    !
+                    ! ------------------------------------------------------------------
+                    case (ZRODLO_KIERUNEK_LEWO)
+                        alpha_p = alpha_p + dx*conjg(zrodlo%Chi_m_in(i,p))*VPHI(GINDEX(pi,pj))
+                    endselect
+
                 enddo
                 beta_p = 0
                 do q = 1 , zrodlo%liczba_modow
                     beta_p = beta_p + zrodlo%Aij(p,q)*zrodlo%ck(q)
                 enddo
-                dk = dk + zrodlo%Sij(k,p)*(  alpha_p - beta_p )
+                dk = dk + zrodlo%Sij(k,p)*( alpha_p - beta_p )
             enddo ! end do p
             zrodlo%dk(k) = dk
         enddo ! end do k
-        else ! else of if (kierunek)
-        ! ------------------------------------------------------------------
-        !
-        !                          ---------------->
-        !
-        ! ------------------------------------------------------------------
-            do k = 1 , zrodlo%liczba_modow
-                dk = 0
-                do p = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-                    alpha_p = 0
-                    do i = 1 , zrodlo%N
-                        pi   = zrodlo%polozenia(i,1)
-                        pj   = zrodlo%polozenia(i,2)
-                        alpha_p = alpha_p + dx*conjg(zrodlo%Chi_m_in(i,p))*VPHI(GINDEX(pi,pj))
-                    enddo
-                    beta_p = 0
-                    do q = 1 , zrodlo%liczba_modow
-                        beta_p = beta_p + zrodlo%Aij(p,q)*zrodlo%ck(q)
-                    enddo
-                    dk = dk + zrodlo%Sij(k,p)*(  alpha_p - beta_p )
-                enddo ! end do p
-                zrodlo%dk(k) = dk
-            enddo ! end do k
-
-        endif ! end of if(kierunek)
 
 
 
@@ -729,51 +608,34 @@ contains
 
         BZ  = BtoDonorB(atomic_Bz)
 
-        if(zrodlo%bKierunek == ZRODLO_KIERUNEK_PRAWO ) then
-        ! ------------------------------------------------------------------
-        !
-        !                          ---------------->
-        !
-        ! ------------------------------------------------------------------
-            do k = 1 , zrodlo%liczba_modow
-                Jin  = 0
-                Jout = 0
-                kvec = zrodlo%k_m_in(k)
+
+
+        do k = 1 , zrodlo%liczba_modow
+            Jin  = 0
+            Jout = 0
+            kvec = zrodlo%k_m_in(k)
+
+            select case (zrodlo%bKierunek)
+            ! ------------------------------------------------------------------
+            !
+            !                          ---------------->
+            !                          <----------------
+            !
+            ! ------------------------------------------------------------------
+            case (ZRODLO_KIERUNEK_PRAWO,ZRODLO_KIERUNEK_LEWO)
                 do i = 1 , zrodlo%N
-                    pj   = zrodlo%polozenia(i,2)
-                    Jin   = Jin  + abs(zrodlo%Chi_m_in(i,k))**2*sin( -dx*dx*pj*Bz + dx*(+kvec + zrodlo%hnY*Bz) )
-                    Jout  = Jout + abs(zrodlo%Chi_m_out (i,k))**2*sin( -dx*dx*pj*Bz + dx*(-kvec + zrodlo%hnY*Bz) )
-
+                    pj    = zrodlo%polozenia(i,2)
+                    Jin   = Jin  + abs(zrodlo%Chi_m_in (i,k))**2*sin( -dx*dx*pj*Bz + dx*(+kvec + zrodlo%hnY*Bz) )
+                    Jout  = Jout + abs(zrodlo%Chi_m_out(i,k))**2*sin( -dx*dx*pj*Bz + dx*(-kvec + zrodlo%hnY*Bz) )
                 enddo ! end of i
+            endselect
 
-                Jin   = - Jin  * dx * abs(zrodlo%ck(k))**2
-                Jout  = - Jout * dx * abs(zrodlo%dk(k))**2
-                zrodlo%Jin(k)  = Jin
-                zrodlo%Jout(k) = Jout
-            enddo ! end of k
+            Jin   = - Jin  * dx * abs(zrodlo%ck(k))**2
+            Jout  = - Jout * dx * abs(zrodlo%dk(k))**2
+            zrodlo%Jin(k)  = Jin
+            zrodlo%Jout(k) = Jout
+        enddo ! end of k
 
-        else ! else of if kierunek
-        ! ------------------------------------------------------------------
-        !
-        !                          <----------------
-        !
-        ! ------------------------------------------------------------------
-            do k = 1 , zrodlo%liczba_modow
-                Jin  = 0
-                Jout = 0
-                kvec = zrodlo%k_m_in(k)
-                do i = 1 , zrodlo%N
-                    pj   = zrodlo%polozenia(i,2)
-                    Jout = Jout + abs(zrodlo%Chi_m_in(i,k))**2*sin( -dx*dx*pj*Bz + dx*(+kvec + zrodlo%hnY*Bz) )
-                    Jin  = Jin  + abs(zrodlo%Chi_m_out (i,k))**2*sin( -dx*dx*pj*Bz + dx*(-kvec + zrodlo%hnY*Bz) )
-                enddo ! end of i
-
-                Jin   = - Jin  * dx * abs(zrodlo%ck(k))**2
-                Jout  = - Jout * dx * abs(zrodlo%dk(k))**2
-                zrodlo%Jin(k)  = Jin
-                zrodlo%Jout(k) = Jout
-            enddo ! end of k
-        endif ! end of if kierunek
 
     end subroutine
 

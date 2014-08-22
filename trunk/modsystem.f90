@@ -128,7 +128,10 @@ module modsystem
                 GFLAGS(ni,nj) = B_WEJSCIE
                 ZFLAGS(ni,nj) = nrz ! przypisujemy fladze numer wejscia
             enddo
-            if(zrodla(nrz)%bKierunek == ZRODLO_KIERUNEK_PRAWO)then
+
+
+            select case (zrodla(nrz)%bKierunek)
+            case (ZRODLO_KIERUNEK_PRAWO)
                 ni = zrodla(nrz)%polozenia(1,1) + 1
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni + in_len - 1
@@ -136,7 +139,7 @@ module modsystem
                 if(nj==1) nj = 2
                 if(mj==NY)mj = NY-1
                 GFLAGS(ni:mi,nj:mj) = B_NORMAL
-            else
+            case (ZRODLO_KIERUNEK_LEWO)
                 ni = zrodla(nrz)%polozenia(1,1) - 1
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni - in_len + 1
@@ -144,7 +147,41 @@ module modsystem
                 if(nj==1) nj = 2
                 if(mj==NY)mj = NY-1
                 GFLAGS(mi:ni,nj:mj) = B_NORMAL
-            endif
+            case (ZRODLO_KIERUNEK_GORA)
+                ni = zrodla(nrz)%polozenia(1,1)
+                nj = zrodla(nrz)%polozenia(1,2) + 1
+                mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
+                mj = nj + in_len - 1
+                if(nj==1) nj = 2
+                if(mj==NY)mj = NY-1
+                GFLAGS(ni:mi,nj:mj) = B_NORMAL
+            case (ZRODLO_KIERUNEK_DOL)
+                ni = zrodla(nrz)%polozenia(1,1)
+                nj = zrodla(nrz)%polozenia(1,2) - 1
+                mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
+                mj = nj - in_len + 1
+                if(nj==1) nj = 2
+                if(mj==NY)mj = NY-1
+                GFLAGS(mi:ni,nj:mj) = B_NORMAL
+            endselect
+
+!            if(zrodla(nrz)%bKierunek == ZRODLO_KIERUNEK_PRAWO)then
+!                ni = zrodla(nrz)%polozenia(1,1) + 1
+!                nj = zrodla(nrz)%polozenia(1,2)
+!                mi = ni + in_len - 1
+!                mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
+!                if(nj==1) nj = 2
+!                if(mj==NY)mj = NY-1
+!                GFLAGS(ni:mi,nj:mj) = B_NORMAL
+!            else
+!                ni = zrodla(nrz)%polozenia(1,1) - 1
+!                nj = zrodla(nrz)%polozenia(1,2)
+!                mi = ni - in_len + 1
+!                mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
+!                if(nj==1) nj = 2
+!                if(mj==NY)mj = NY-1
+!                GFLAGS(mi:ni,nj:mj) = B_NORMAL
+!            endif
         enddo
 
         ! -------------------------------------------------------------
@@ -287,7 +324,7 @@ module modsystem
                     MATASIZE = MATASIZE + 1
                     TRANS_MAXN = TRANS_MAXN + 1
             case(B_WEJSCIE)
-                    MATASIZE = MATASIZE + zrodla(ZFLAGS(i,j))%N + 1 - 2 ! +1 na relacje prawo/lewo -2 na obciecie indeksow (1 i N)
+                    MATASIZE = MATASIZE + zrodla(ZFLAGS(i,j))%N + 1 - 2 ! +1 na relacje prawo/lewo/gora/dol -2 na obciecie indeksow (1 i N)
                     TRANS_MAXN = TRANS_MAXN + 1
             case(B_NORMAL)
                     MATASIZE = MATASIZE + 5
@@ -357,73 +394,47 @@ module modsystem
                 ! ----------------------------------------------------------------------
                 else if( GFLAGS(i,j) == B_WEJSCIE) then
                     nzrd = ZFLAGS(i,j)
+
+                    ni   = i
+                    nj   = j ! globalne polozenia na siatce
+                    ln   = GINDEX(i,j) - GINDEX(i,zrodla(nzrd)%polozenia(1,2)) + 1 ! lokalny indeks
+
+
+                    select case (zrodla(nzrd)%bKierunek)
                     ! ------------------------------------------------------------------
                     ! Zrodla prawe:
                     !
                     !                      ------------------------>
                     !
                     ! ------------------------------------------------------------------
-                    if( zrodla(nzrd)%bKierunek == ZRODLO_KIERUNEK_PRAWO ) then
-
-                    ni   = i
-                    nj   = j ! globalne polozenia na siatce
-                    ln   = GINDEX(i,j) - GINDEX(i,zrodla(nzrd)%polozenia(1,2)) + 1 ! lokalny indeks
-
-                    cmatA(itmp)   = CMPLX(-0.5/DX/DX*2*cos(DX*DX*(nj)*BZ))
-                    idxA (itmp,1) = GINDEX(i  ,j)
-                    idxA (itmp,2) = GINDEX(i+1,j)
-                    itmp = itmp + 1
-
-                    post = 0.5/DX/DX*(EXP(II*DX*DX*(nj)*BZ))
-
-                    do nn = 2 , zrodla(nzrd)%N - 1
-                    pnj   = zrodla(nzrd)%polozenia(nn,2)
-                    if( ln == nn  ) then
-
-                        cmatA(itmp)   = CMPLX( 2.0/DX/DX + UTOTAL(i,j) - Ef ) &
-                           & + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
-                        idxA (itmp,1) = GINDEX(ni,nj)
-                        idxA (itmp,2) = GINDEX(ni,pnj)
+                    case (ZRODLO_KIERUNEK_PRAWO)
+                        cmatA(itmp)   = CMPLX(-0.5/DX/DX*2*cos(DX*DX*(nj)*BZ))
+                        idxA (itmp,1) = GINDEX(i  ,j)
+                        idxA (itmp,2) = GINDEX(i+1,j)
                         itmp = itmp + 1
-
-                    else if( nn == ln+1  ) then
-                        cmatA(itmp) = CMPLX(-0.5/DX/DX) &
-                        &   + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
-                        idxA(itmp,1) = GINDEX(ni,nj)
-                        idxA(itmp,2) = GINDEX(ni,pnj)
-                        itmp = itmp + 1
-                    else if( nn == ln-1  ) then
-
-                        cmatA(itmp) = CMPLX(-0.5/DX/DX) &
-                        &   + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
-                        idxA(itmp,1) = GINDEX(ni,nj)
-                        idxA(itmp,2) = GINDEX(ni,pnj)
-                        itmp = itmp + 1
-                    else
-                        cmatA(itmp)  = post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
-                        idxA(itmp,1) = GINDEX(ni,nj)
-                        idxA(itmp,2) = GINDEX(ni,pnj)
-                        itmp = itmp + 1
-                    endif
-                    enddo
-                    else
+                        post = 0.5/DX/DX*(EXP(+II*DX*DX*(nj)*BZ))
                     ! ------------------------------------------------------------------
                     ! Zrodla lewe:
                     !
                     !                      <------------------------
                     !
                     ! ------------------------------------------------------------------
-                    ni   = i
-                    nj   = j ! globalne polozenia na siatce
-                    ln   = GINDEX(i,j) - GINDEX(i,zrodla(nzrd)%polozenia(1,2)) + 1 ! lokalny indeks
+                    case (ZRODLO_KIERUNEK_LEWO)
+                        cmatA(itmp)   = CMPLX(-0.5/DX/DX*2*cos(DX*DX*(nj)*BZ))
+                        idxA (itmp,1) = GINDEX(i  ,j)
+                        idxA (itmp,2) = GINDEX(i-1,j)
+                        itmp = itmp + 1
+                        post =-0.5/DX/DX*(EXP(-II*DX*DX*(nj)*BZ))
+                    endselect
 
-                    cmatA(itmp)   = CMPLX(-0.5/DX/DX*2*cos(DX*DX*(nj)*BZ))
-                    idxA (itmp,1) = GINDEX(i  ,j)
-                    idxA (itmp,2) = GINDEX(i-1,j)
-                    itmp = itmp + 1
-
-                    post =-0.5/DX/DX*(EXP(-II*DX*DX*(nj)*BZ))
-
+                    select case (zrodla(nzrd)%bKierunek)
+                    ! ------------------------------------------------------------------
+                    !
+                    !                      <------------------------
+                    !                      ------------------------>
+                    !
+                    ! ------------------------------------------------------------------
+                    case (ZRODLO_KIERUNEK_PRAWO,ZRODLO_KIERUNEK_LEWO)
                     do nn = 2 , zrodla(nzrd)%N - 1
                     pnj   = zrodla(nzrd)%polozenia(nn,2)
                     if( ln == nn  ) then
@@ -454,8 +465,8 @@ module modsystem
                         itmp = itmp + 1
                     endif
                     enddo
+                    endselect
 
-                    endif ! end of if PRAWE/ LEWE
                 endif ! end of if WEJSCIE
             endif ! end if GINDEX > 0
         enddo ! end of j
