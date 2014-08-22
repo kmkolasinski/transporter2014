@@ -16,14 +16,14 @@ MODULE modpop
     double precision :: DX  , Ef , t0 , BZ , hny , Emax , KIN
     integer          :: N , wypisz = 0
     logical          :: bPoziome, bEmax
-    integer           :: NO_EVAN_MODES
+
     complex*16,dimension(:,:),allocatable        :: Hamiltonian
     double precision,dimension(:),allocatable    :: UVEC
     complex*16,dimension(:,:),allocatable        :: Chi_m_in ! mod wchodzacy do ukladu
-    double precision,dimension(:),allocatable    :: K_m_in
+    complex*16,dimension(:),allocatable          :: K_m_in
     complex*16,dimension(:,:),allocatable        :: Chi_m_out ! wychodzacy
-    double precision,dimension(:),allocatable    :: K_m_out
-    integer                                      :: LICZBA_MODOW,L_M
+    complex*16,dimension(:),allocatable          :: K_m_out
+    integer                                      :: LICZBA_MODOW,L_M,LICZBA_MODOW_EVANESCENTYCH
 
 
     ! -------------------------------------------------
@@ -48,7 +48,7 @@ MODULE modpop
       public :: modpop_get_km
       public :: modpop_get_chi
       public :: modpop_calc_modes_from_wfm
-      public :: NO_EVAN_MODES
+
 
 
     contains
@@ -107,7 +107,7 @@ MODULE modpop
   !     Query the optimal workspace.
   !
 
-        NO_EVAN_MODES = 0
+
         LWORK  = -1
         LRWORK = -1
         LIWORK = -1
@@ -138,41 +138,36 @@ MODULE modpop
         bEmax = .false.
 
         if(LICZBA_MODOW == 0) return;
-        if(LICZBA_MODOW+NO_EVAN_MODES > N) NO_EVAN_MODES = N  - LICZBA_MODOW
-        print*,"Liczba modow evanescentnych:",NO_EVAN_MODES
 
-        allocate(Chi_m_in (N+2,LICZBA_MODOW+NO_EVAN_MODES))
-        allocate(K_m_in   (LICZBA_MODOW+NO_EVAN_MODES)  )
-        allocate(Chi_m_out(N+2,LICZBA_MODOW+NO_EVAN_MODES))
-        allocate(K_m_out  (LICZBA_MODOW+NO_EVAN_MODES)  )
+
+
+!        allocate(Chi_m_in (N+2,LICZBA_MODOW))
+!        allocate(K_m_in   (LICZBA_MODOW)  )
+!        allocate(Chi_m_out(N+2,LICZBA_MODOW))
+!        allocate(K_m_out  (LICZBA_MODOW)  )
 
 
 !		call modpop_relacja_dyspersji(8,"rel.txt")
 
-        print*,"Wektory (IN):"
-        do num = 1, LICZBA_MODOW
-            call modpop_znajdz_k_in(num)
-        enddo
-        print*,"EWektory (IN):"
-        do num = LICZBA_MODOW + 1, LICZBA_MODOW + NO_EVAN_MODES
-            call modpop_znajdz_evan_k_in(num)
-        enddo
+!        print*,"Wektory (IN):"
+!        do num = 1, LICZBA_MODOW
+!            call modpop_znajdz_k_in(num)
+!        enddo
+!        print*,"EWektory (IN):"
+!        do num = LICZBA_MODOW + 1, LICZBA_MODOW
+!            call modpop_znajdz_evan_k_in(num)
+!        enddo
+!
+!        print*,"Wektory (OUT):"
+!        do num = 1, LICZBA_MODOW
+!            call modpop_znajdz_k_out(num)
+!        enddo
+!        print*,"EWektory (OUT):"
+!        do num = LICZBA_MODOW + 1, LICZBA_MODOW
+!            call modpop_znajdz_evan_k_out(num)
+!        enddo
+!        wypisz = 1
 
-        print*,"Wektory (OUT):"
-        do num = 1, LICZBA_MODOW
-            call modpop_znajdz_k_out(num)
-        enddo
-        print*,"EWektory (OUT):"
-        do num = LICZBA_MODOW + 1, LICZBA_MODOW + NO_EVAN_MODES
-            call modpop_znajdz_evan_k_out(num)
-        enddo
-        wypisz = 1
-
-
-
-!        print*,1.0/dx/dx/2*Rd*1000.0
-!        print*,dx*dx*BZ*LR2L
-        !call modpop_zapisz_wektory(7,"mod.txt",0.0D0,1.0D0)
 
 
     end subroutine modpop_inicjalizacja
@@ -252,7 +247,8 @@ MODULE modpop
         !do i = 1 , N + 2
         do i = 1 , N + 2
             write(1111,"(2e20.6)",advance='no'),p1 + (i-1)*DX*LR2L,p2
-            write(1111,"(1000f20.10)"),abs(Chi_m_IN(i,:))**2!,DBLE(Chi_m_IN(i,m)),IMAG(Chi_m_IN(i,m))
+            !write(1111,"(1000f20.10)"),abs(Chi_m_IN(i,:))**2!,DBLE(Chi_m_IN(i,m)),IMAG(Chi_m_IN(i,m))
+            write(1111,"(1000f20.10)"),abs(Chi_m_IN(i,:))**2,DBLE(Chi_m_IN(i,:)),IMAG(Chi_m_IN(i,:))
         enddo
         close(1111)
 
@@ -264,207 +260,12 @@ MODULE modpop
         !do i = 1 , N + 2
         do i = 1 , N + 2
             write(1111,"(2e20.6)",advance='no'),p1 + (i-1)*DX*LR2L,p2
-            write(1111,"(1000f20.10)"),abs(Chi_m_OUT(i,:))**2!,DBLE(Chi_m_OUT(i,m)),IMAG(Chi_m_OUT(i,m))
+            write(1111,"(1000f20.10)"),abs(Chi_m_OUT(i,:))**2,DBLE(Chi_m_OUT(i,:)),IMAG(Chi_m_OUT(i,:))
         enddo
         close(1111)
 
 
     end subroutine modpop_zapisz_wektory
-
-   subroutine modpop_znajdz_k_in(num)
-        integer, intent(in) :: num
-        double precision    ::  k1 , k2 , kdiff , NK
-
-
-        double precision :: YcY
-        complex*16        :: cnk
-
-        k1    = 0
-        k2    = 3.14159/DX
-        kdiff = 1.0
-        do while( kdiff > 1e-6  )
-            nk    = (k1+k2)/2
-            Emax = Ef*2
-            cnk  = nk
-            call modpop_znajdz_wartosci_wlasne("N",cnk,Emax,.false.)
-            if(L_M < num ) then
-                k2 = nk
-            else
-                if ( W(num) > Ef  ) then
-                    k2 = nk
-                else
-                    k1 = nk
-                endif
-            endif
-            kdiff = abs( (k2-k1)/k2)
-        enddo
-
-
-        cnk = nk
-        call modpop_znajdz_wartosci_wlasne("V",CNK,Emax,.false.)
-        Chi_M_IN(:,num)     = 0
-        K_M_IN(num)         = NK
-
-
-
-!        !Chi_M_IN(:,num) = Z(:,num)
-        Chi_M_IN(2:N+1,num) = Z(1:N,num)
-
-        YcY          = sum(abs(Chi_M_IN(:,num))**2)*DX
-        Chi_M_IN(:,num) = Chi_M_IN(:,num)/sqrt(YcY)!/SQRT(2*3.14159*NK)     ! dzielimy do rachunku zaburzen
-
-        print*,"K_IN(",num,")=",K_M_IN(num)*L2LR,"[nm]"
-
-
-
-    end subroutine modpop_znajdz_k_in
-
-    subroutine modpop_znajdz_evan_k_in(num)
-        integer, intent(in) :: num
-        double precision    ::  k1 , k2 , kdiff , NK
-
-
-        double precision :: YcY
-        complex*16        :: cnk
-
-        k1    = 0
-        k2    = 3.14159/DX
-        kdiff = 1.0
-
-        do while( kdiff > 1e-6  )
-
-            nk   = (k1+k2)/2
-            Emax =  Ef*2*NO_EVAN_MODES
-            cnk  = -nk*II
-
-            call modpop_znajdz_wartosci_wlasne("N",cnk,Emax,.false.)
-            if ( W(num) < Ef  ) then
-                k2 = nk
-            else
-                k1 = nk
-            endif
-
-            kdiff = abs( (k2-k1)/k2)
-        enddo
-
-
-        cnk = nk
-        call modpop_znajdz_wartosci_wlasne("V",CNK,Emax,.false.)
-
-
-!        Chi_M_OUT(:,num)     = 0
-!        K_M_OUT(num)         = NK
-!        Chi_M_OUT(2:N+1,num) = Z(1:N,num)
-!        YcY              = sum(abs(Chi_M_OUT(:,num))**2)*DX
-!        Chi_M_OUT(:,num) = Chi_M_OUT(:,num)/sqrt(YcY)!/SQRT(2*3.14159*K_M_IN(num))
-!        print*,"EK_OUT(",num,")=",K_M_OUT(num)*L2LR,"[nm]"
-
-        Chi_M_IN(:,num)     = 0
-        K_M_IN(num)         = NK
-        Chi_M_IN(2:N+1,num) = Z(1:N,num)
-        YcY                 = sum(abs(Chi_M_IN(:,num))**2)*DX
-        Chi_M_IN(:,num)     = Chi_M_IN(:,num)/sqrt(YcY)!/SQRT(2*3.14159*NK)     ! dzielimy do rachunku zaburzen
-        print*,"EK_IN(",num,")=",K_M_IN(num)*L2LR,"[nm]"
-
-
-
-    end subroutine modpop_znajdz_evan_k_in
-
-
-    subroutine modpop_znajdz_k_out(num)
-        integer, intent(in) :: num
-        !double precision    :: K_VEC , k1 , k2 , kdiff , NK
-        double precision    ::  NK
-
-        complex*16        :: cnk
-        double precision :: YcY
-
-!        k1    = 0
-!        k2    =-3.14159/DX
-!        kdiff = 1.0
-!
-!        do while( kdiff > 1.0e-6  )
-!            nk    = (k1+k2)/2
-!            K_VEC = nk
-!            cnk   = nk
-!            call modpop_znajdz_wartosci_wlasne("N",cnk,Emax,.false.)
-!            if(L_M < num ) then
-!                k2 = nk
-!            else
-!                if ( W(num) > Ef  ) then
-!                    k2 = nk
-!                else
-!                    k1 = nk
-!                endif
-!            endif
-!            kdiff = abs( (k2-k1)/k2)
-!        enddo
-
-    	nk  = -K_M_IN(num)
-        cnk = nk
-        call modpop_znajdz_wartosci_wlasne("V",CNK,Emax,.false.)
-
-        Chi_M_OUT(:,num)     = 0
-        K_M_OUT(num)         = NK
-        Chi_M_OUT(2:N+1,num) = Z(1:N,num)
-
-        YcY              = sum(abs(Chi_M_OUT(:,num))**2)*DX
-        Chi_M_OUT(:,num) = Chi_M_OUT(:,num)/sqrt(YcY)!/SQRT(2*3.14159*K_M_IN(num))
-
-        print*,"K_OUT(",num,")=",K_M_OUT(num)*L2LR,"[nm]"
-
-
-
-    end subroutine modpop_znajdz_k_out
-
- subroutine modpop_znajdz_evan_k_out(num)
-        integer, intent(in) :: num
-        !double precision    :: K_VEC , k1 , k2 , kdiff , NK
-        double precision    ::  NK
-
-        complex*16        :: cnk
-        double precision :: YcY
-!
-!        k1    = 0
-!        k2    =-3.14159/DX
-!        kdiff = 1.0
-!
-!        do while( kdiff > 1.0e-6  )
-!            nk    = (k1+k2)/2
-!            K_VEC = nk
-!            cnk   = nk*II
-!            call modpop_znajdz_wartosci_wlasne("N",cnk,Emax,.false.)
-!            if ( W(num) < Ef  ) then
-!                k2 = nk
-!            else
-!                k1 = nk
-!            endif
-!            kdiff = abs( (k2-k1)/k2)
-!        enddo
-
-
-		nk  = -K_M_IN(num)
-        cnk = II*nk
-        call modpop_znajdz_wartosci_wlasne("V",CNK,Emax,.false.)
-
-        Chi_M_OUT(:,num)     = 0
-        K_M_OUT(num)         = NK
-        Chi_M_OUT(2:N+1,num) = Z(1:N,num)
-        YcY              = sum(abs(Chi_M_OUT(:,num))**2)*DX
-        Chi_M_OUT(:,num) = Chi_M_OUT(:,num)/sqrt(YcY)!/SQRT(2*3.14159*K_M_IN(num))
-        print*,"EK_OUT(",num,")=",K_M_OUT(num)*L2LR,"[nm]"
-
-!        Chi_M_IN(:,num)     = 0
-!        K_M_IN(num)         = NK
-!        Chi_M_IN(2:N+1,num) = Z(1:N,num)
-!        YcY                 = sum(abs(Chi_M_IN(:,num))**2)*DX
-!        Chi_M_IN(:,num)     = Chi_M_IN(:,num)/sqrt(YcY)!/SQRT(2*3.14159*NK)     ! dzielimy do rachunku zaburzen
-!        print*,"EK_IN(",num,")=",K_M_IN(num)*L2LR,"[nm]"
-
-
-
-
-    end subroutine modpop_znajdz_evan_k_out
 
     ! -----------------------------------------------------
     ! TYP: V - wszytko , N tylko wartosci wlasne
@@ -525,27 +326,6 @@ MODULE modpop
             integer :: i
             complex*16 :: alpha
 
-!        if(bPoziome) then
-!            Hamiltonian(1,2)   = -t0
-!            Hamiltonian(1,1)   =  UVEC(1) + 4*t0 - 2*t0*cos(pk*DX + DX*DX*BZ*(1-hNY))
-!        do i = 2 , N - 1
-!            Hamiltonian(i,i-1) = -t0
-!            Hamiltonian(i,i+1) = -t0
-!            Hamiltonian(i,i)   =  UVEC(i) + 4*t0 - 2*t0*cos(pk*DX + DX*DX*BZ*(i-hNY) )
-!        enddo
-!            Hamiltonian(N,N-1) = -t0
-!            Hamiltonian(N,N)   =  UVEC(N) + 4*t0 - 2*t0*cos(pk*DX + DX*DX*BZ*(N-hNY))
-!        else
-!            Hamiltonian(1,2)   = -t0
-!            Hamiltonian(1,1)   =  UVEC(1) + 4*t0 - 2*t0*cos(pk*DX - DX*DX*BZ*(1-hNY))
-!        do i = 2 , N - 1
-!            Hamiltonian(i,i-1) = -t0
-!            Hamiltonian(i,i+1) = -t0
-!            Hamiltonian(i,i)   =  UVEC(i) + 4*t0 - 2*t0*cos(pk*DX - DX*DX*BZ*(i-hNY) )
-!        enddo
-!            Hamiltonian(N,N-1) = -t0
-!            Hamiltonian(N,N)   =  UVEC(N) + 4*t0 - 2*t0*cos(pk*DX - DX*DX*BZ*(N-hNY))
-!        endif
 
 
         if(bPoziome) then
@@ -616,53 +396,67 @@ MODULE modpop
 
 
 
-    subroutine modpop_liczba_podpasm(no_podpasm)
-        integer , intent(inout) :: no_podpasm
+    subroutine modpop_liczba_podpasm(no_podpasm,no_evan)
+        integer , intent(inout) :: no_podpasm,no_evan
         no_podpasm = LICZBA_MODOW
+        no_evan    = LICZBA_MODOW_EVANESCENTYCH
 
     end subroutine modpop_liczba_podpasm
 
     subroutine modpop_get_km(pLiczbaModow,pKm_in,pKm_out)
-        integer, intent(in)                                    :: pLiczbaModow
-        double precision,dimension(pLiczbaModow+NO_EVAN_MODES),intent(inout) :: pKm_in,pKm_out
+        integer, intent(in)                              :: pLiczbaModow
+        complex*16,dimension(pLiczbaModow),intent(inout) :: pKm_in,pKm_out
 
-        pKm_in (1:pLiczbaModow+NO_EVAN_MODES) = K_m_in (1:pLiczbaModow+NO_EVAN_MODES)
-        pKm_out(1:pLiczbaModow+NO_EVAN_MODES) = K_m_out(1:pLiczbaModow+NO_EVAN_MODES)
+        pKm_in (1:pLiczbaModow) = K_m_in (1:pLiczbaModow)
+        pKm_out(1:pLiczbaModow) = K_m_out(1:pLiczbaModow)
 
     end subroutine modpop_get_km
 
 
     subroutine modpop_get_chi(pLiczbaModow,pN,pchi_m_in,pchi_m_out)
         integer, intent(in)                                 :: pLiczbaModow,pN
-        complex*16,dimension(pN,pLiczbaModow+NO_EVAN_MODES),intent(inout) :: pchi_m_in,pchi_m_out
+        complex*16,dimension(pN,pLiczbaModow),intent(inout) :: pchi_m_in,pchi_m_out
 
-        pchi_m_in (1:pN,1:pLiczbaModow+NO_EVAN_MODES) = Chi_m_in (1:pN,1:pLiczbaModow+NO_EVAN_MODES)
-        pchi_m_out(1:pN,1:pLiczbaModow+NO_EVAN_MODES) = Chi_m_out(1:pN,1:pLiczbaModow+NO_EVAN_MODES)
+        pchi_m_in (1:pN,1:pLiczbaModow) = Chi_m_in (1:pN,1:pLiczbaModow)
+        pchi_m_out(1:pN,1:pLiczbaModow) = Chi_m_out(1:pN,1:pLiczbaModow)
 
     end subroutine modpop_get_chi
 
 
 ! -----------------------------------------------------------------------------------------------
 !                      Wyznaczanie modow metoda Wave-Function-Matching
+! Podajemy krok siatki w nm, rozmiar wejscia w oczkach siatki (wliczajac punkty gdzie
+! f.f. przyjmuje wartosc zero - warunek Dirichleta).
+! pEf   - energia Fermiego w meV
+! pB    - pole magnetyczne w Teslach
+! pUvec - wektor z potencjalem w danym wejsciu
+!
+! Funkcja wyznacza wszystkie mody lezace ponizej energii Fermiego plus wszystkie
+! mody evanescentne. Funkcja zostala napisana na podstawie artykulu:
+! "Calculating Scattering Matrices by Wave Function Matching" sekcja:
+! 1.1.3 Wave function matching in three dimensions, wykorzystuje przede wszystkim wzor (52)
 ! -----------------------------------------------------------------------------------------------
-    subroutine modpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec)
+    subroutine modpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
         double precision,intent(in)               :: pDX
         integer,intent(in)                        :: pN
         double precision,intent(in)               :: pEf
         double precision,intent(in)               :: pB
         double precision,intent(in),dimension(pN) :: pUVEC
+        logical, intent(in) :: pbHorizontal
 
-        complex*16, allocatable , dimension(:,:) :: Mzero,Mdiag,Mham,MB,MA , Mtau
-        integer :: i,j
-        INTEGER :: LDVL, LDVR , LWMAX , LWORK , INFO
-        COMPLEX*16 , dimension(:)   , allocatable  :: ALPHA , BETA , WORK
-        double precision, dimension(:)   , allocatable  :: RWORK
-        COMPLEX*16 , dimension(:,:) , allocatable  :: Z
-        COMPLEX*16 :: DUMMY(1,1),lambda
-        doubleprecision :: kvec
+        ! zmienne pomocnicze
+        complex*16, allocatable , dimension(:,:) :: Mdiag,Mham,MB,MA , Mtau
+        integer :: i,j,num_in,num_out
+
+        INTEGER                                      :: LDVL, LDVR , LWMAX , LWORK , INFO
+        COMPLEX*16 , dimension(:) ,     allocatable  :: ALPHA , BETA , WORK
+        double precision, dimension(:), allocatable  :: RWORK
+        COMPLEX*16 , dimension(:,:)   , allocatable  :: Z
+        COMPLEX*16 :: DUMMY(1,1),lambda , YcY
+        complex*16 :: kvec
         bPoziome = .false. ! ustalamy na sztywno zrodla prawo - lewo
 
-
+        ! konwersja jednostek do jednostek donorowych
         DX    = pDX*L2LR
         N     = pN-2
         Ef    = pEf/Rd/1000 ! bo Ef w meV
@@ -670,71 +464,57 @@ MODULE modpop
         BZ    = BtoDonorB(pB)
         hny   = (N+1)/2.0!
 
-        print*,"hny=",hny
-        print*,"N=",N
-        print*,"T=",BtoDonorB(pB)
 
-        if(.not. allocated(Uvec))allocate(Uvec(N))
+        ! alokacja tablic
+        if(.not. allocated(Uvec)) allocate(Uvec(N))
 
         do i = 1 , N
             Uvec(i)        = pUVEC(i+1)/Rd/1000 ! bo Ef w meV
         enddo
 
-        allocate(Mzero(N,N))
+
         allocate(Mtau(N,N))
         allocate(Mdiag(N,N))
         allocate(Mham (N,N))
         allocate(MA (2*N,2*N))
         allocate(MB (2*N,2*N))
-        allocate(Z (2*N,2*N))
+        allocate(Z  (2*N,2*N))
 
 
-        Mzero = 0
+        ! Tworzenie rownania wlasnego  - wzor (52)
         Mdiag = 0
         Mham  = 0
         Mtau  = 0
 
-
-
+        ! Przygotowanie podmacierzy diagonalnej 1 i macierzy B
         do i = 1 , N
-            Mdiag(i,i) = 1
-            Mtau(i,i)  =  - t0 * exp(II*(DX*DX*BZ*(i-hNY)) )
-
+            Mdiag(i,i) =     1
+            Mtau (i,i) =  - t0 * exp(II*(DX*DX*BZ*(i-hNY)))
         enddo
-
+        ! Przygotowanei podmacierzy (E-H)
         do i = 1 , N
             Mham(i,i)   = 4*t0 + Uvec(i) - Ef
-            if(i < N) Mham(i,i+1) = -t0 !* exp(-II*(DX*DX*BZ*(i-hNY)) )
-            if(i > 1) Mham(i,i-1) = -t0 !* exp(+II*(DX*DX*BZ*(i-1-hNY)) )
-
+            if(i < N) Mham(i,i+1) = -t0
+            if(i > 1) Mham(i,i-1) = -t0
         enddo
-!        lambda = 0
-!        do i = 1 , N
-!        do j = i , N
-!            lambda = lambda +  abs(Mham(i,j) - conjg(Mham(j,i)))
-!        enddo
-!        enddo
-!        print*,"symetry=",lambda
-!        do i = 1 , N
-!            write(222,"(200f10.6)"),Mham(i,:)
-!        enddo
 
-        MA(1:N,1:N)         =  Mzero
+        ! Wypelnienie macierzy:
+        MA  = 0
+        MB  = 0
+
         MA(N+1:2*N,1:N)     =  Mdiag
         MA(1:N,N+1:2*N)     =  Mtau
         MA(N+1:2*N,N+1:2*N) =  Mham
 
         MB(1:N,1:N)         =  Mdiag
-        MB(N+1:2*N,1:N)     =  Mzero
-        MB(1:N,N+1:2*N)     =  Mzero
         MB(N+1:2*N,N+1:2*N) = -conjg(Mtau)
 
 
-
-        LWMAX = 100 * N
+        ! Ustalenie parametrow LAPACKA
+        LWMAX = 50 * N
         LDVL  = 2  * N
         LDVR  = 2  * N
-
+        ! Alokacja macierzy LAPACKA
         allocate(ALPHA(2*N))
         allocate(BETA(2*N))
         allocate(RWORK(8*N))
@@ -750,91 +530,149 @@ MODULE modpop
 
         LWORK = MIN(LWMAX, INT( WORK(1)))
 
-        print*, INFO
-        print*, LWORK,WORK(1)
-!        MA(1:N,1:N)         =  Mzero
-!        MA(N+1:2*N,1:N)     =  Mdiag
-!        MA(1:N,N+1:2*N)     =  Mtau
-!        MA(N+1:2*N,N+1:2*N) =  Mham
-!
-!        MB(1:N,1:N)         =  Mdiag
-!        MB(N+1:2*N,1:N)     =  Mzero
-!        MB(1:N,N+1:2*N)     =  Mzero
-!        MB(N+1:2*N,N+1:2*N) = -conjg(Mtau)
 
+        ! rozwiazanie problemu wlasnego
         CALL ZGGEV("N","V", 2*N, MA, 2*N, MB , 2*N, ALPHA,BETA, &
     &   DUMMY, 1, Z, LDVR, WORK, LWORK, RWORK, INFO )
 
-        print*, INFO
-        print*, LWORK
+        ! sprawdzamy czy uklad zostal skontruowany poprawnie
+        if( INFO /= 0 ) then
+            print*,"Modpop::WFM::Nie udalo sie poprawnie znalezc modow"
+            stop
+        endif
 
 
+        ! Obliczanie liczby modow ,
+        ! pamietamy ze: lambda = exp(i*k*DX)
         LICZBA_MODOW = 0
         do i = 1 , 2*N
-            if(abs(Beta(i))>1e-16) then
+            if(abs(Beta(i))>1e-16) then ! zgodnie z przykladem LApacka
                 lambda= (ALPHA(i)/BETA(i))
-
-!                print"(i4,12f12.8)",i,abs(lambda),log(lambda)/II/DX*L2LR
+                !print"(i4,12f16.10)",i,abs(lambda),log(lambda)/II/DX*L2LR
                 if(  abs(abs(lambda) - 1.0) < 1.0E-6 ) then
                     kvec  = log(lambda)/II/DX*L2LR
-                    print"(i4,12f12.8)",i,abs(lambda),log(lambda)/II/DX*L2LR
-                    if(kvec > 0)LICZBA_MODOW = LICZBA_MODOW + 1
+                    !print"(i4,12f16.10)",i,abs(lambda),log(lambda)/II/DX*L2LR
+                    if(dble(kvec) > 0)LICZBA_MODOW = LICZBA_MODOW + 1
                 endif
             endif
         enddo
 
+
+
         print*,"Liczba modow:",LICZBA_MODOW
-!
-!
-!        if(LICZBA_MODOW == 0) return;
-!        if(LICZBA_MODOW+NO_EVAN_MODES > N) NO_EVAN_MODES = N  - LICZBA_MODOW
-!        print*,"Liczba modow evanescentnych:",NO_EVAN_MODES
-!
-!        allocate(Chi_m_in (N+2,LICZBA_MODOW+NO_EVAN_MODES))
-!        allocate(K_m_in   (LICZBA_MODOW+NO_EVAN_MODES)  )
-!        allocate(Chi_m_out(N+2,LICZBA_MODOW+NO_EVAN_MODES))
-!        allocate(K_m_out  (LICZBA_MODOW+NO_EVAN_MODES)  )
-!
-!
-!!		call modpop_relacja_dyspersji(8,"rel.txt")
-!
-!        print*,"Wektory (IN):"
-!        do num = 1, LICZBA_MODOW
-!            call modpop_znajdz_k_in(num)
-!        enddo
-!        print*,"EWektory (IN):"
-!        do num = LICZBA_MODOW + 1, LICZBA_MODOW + NO_EVAN_MODES
-!            call modpop_znajdz_evan_k_in(num)
-!        enddo
-!
-!        print*,"Wektory (OUT):"
-!        do num = 1, LICZBA_MODOW
-!            call modpop_znajdz_k_out(num)
-!        enddo
-!        print*,"EWektory (OUT):"
-!        do num = LICZBA_MODOW + 1, LICZBA_MODOW + NO_EVAN_MODES
-!            call modpop_znajdz_evan_k_out(num)
-!        enddo
-!        wypisz = 1
-!
-!
-!
-!!        print*,1.0/dx/dx/2*Rd*1000.0
-!!        print*,dx*dx*BZ*LR2L
-!        !call modpop_zapisz_wektory(7,"mod.txt",0.0D0,1.0D0)
-!
-!
-!
-!
-!
-!
+        if(LICZBA_MODOW == 0) return;
+
+        if(allocated(Chi_m_in))  deallocate(Chi_m_in)
+        if(allocated(K_m_in))    deallocate(K_m_in)
+        if(allocated(Chi_m_out)) deallocate(Chi_m_out)
+        if(allocated(K_m_out))   deallocate(K_m_out)
 
 
+        allocate(Chi_m_in (N+2,N))
+        allocate(K_m_in   (N)   )
+        allocate(Chi_m_out(N+2,N))
+        allocate(K_m_out  (N)   )
 
 
+        print*,""
+        print*,"WEKTORY FALOWE (IN/OUT):"
+
+        num_in  = 0
+        num_out = 0
+        do i = 1 , 2*N
+            if(abs(Beta(i))>1e-16) then
+                lambda = (ALPHA(i)/BETA(i))
+                if(  abs(abs(lambda) - 1.0) < 1.0E-6 ) then
+                    kvec  = (log(lambda)/II/DX)
+                    if(dble(kvec) > 0) then
+                        num_in                   = num_in + 1
+                        K_M_IN(num_in)           = kvec
+                        Chi_M_IN(2:N+1,num_in)   = Z(N+1:2*N,i)
+                        YcY                      = sum(abs(Chi_M_IN(:,num_in))**2)*DX
+                        Chi_M_IN(:,num_in)       = Chi_M_IN(:,num_in)/sqrt(YcY)
+                        !print"(A,i4,A,2f12.6,A)","  K_IN (",num_in,")=",K_M_IN(num_in)*L2LR,"[nm]"
+                    else
+                        num_out                  = num_out + 1
+                        K_m_out(num_out)         = kvec
+                        Chi_m_out(2:N+1,num_out) = Z(N+1:2*N,i)
+                        YcY                      = sum(abs(Chi_m_out(:,num_out))**2)*DX
+                        Chi_m_out(:,num_out)     = Chi_m_out(:,num_out)/sqrt(YcY)
+                        !print"(A,i4,A,2f12.6,A)","  K_OUT(",num_out,")=",K_m_out(num_out)*L2LR,"[nm]"
+                    endif
+                endif
+            endif
+        enddo
+
+        call modpop_sort_vectors_by_values(Chi_M_IN (:,1:LICZBA_MODOW),K_M_IN (1:LICZBA_MODOW),+1)
+        call modpop_sort_vectors_by_values(Chi_M_OUT(:,1:LICZBA_MODOW),K_M_OUT(1:LICZBA_MODOW),+1)
 
 
+        print*,"-------------------------------------------------------------"
+        print*," K wave.  :         Input mod.      |         Output mod."
+        print*,"-------------------------------------------------------------"
+        do i = 1 , LICZBA_MODOW
+             print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",K_M_IN(i)*L2LR," | ",K_M_OUT(i)*L2LR
+        enddo
+        print*,"-------------------------------------------------------------"
 
+
+        print*,""
+        print*,"WEKTORY EVANESCENTNE (IN/OUT):"
+
+        do i = N , 1 , -1
+            if(abs(Beta(i))>1e-16) then
+                lambda= (ALPHA(i)/BETA(i))
+                kvec  = (log(lambda)/DX)
+                if( abs(lambda) > 1 + 1E-6 ) then
+
+                    num_out                  = num_out + 1
+                    K_m_out(num_out)         = kvec
+                    Chi_m_out(2:N+1,num_out) = Z(N+1:2*N,i)
+                    YcY                      = sum(abs(Chi_m_out(:,num_out))**2)*DX
+                    Chi_m_out(:,num_out)     = Chi_m_out(:,num_out)/sqrt(YcY)
+                endif
+            endif ! end of if beta
+        enddo
+
+        do i = N , 2*N
+            if(abs(Beta(i))>1e-16) then
+                lambda= (ALPHA(i)/BETA(i))
+                kvec  = (log(lambda)/DX)
+                if(  abs(lambda) < 1 - 1E-6 ) then
+
+                    num_in                   = num_in + 1
+                    K_M_IN(num_in)           = kvec
+                    Chi_M_IN(2:N+1,num_in)   = Z(N+1:2*N,i)
+                    YcY                      = sum(abs(Chi_M_IN(:,num_in))**2)*DX
+                    Chi_M_IN(:,num_in)       = Chi_M_IN(:,num_in)/sqrt(YcY)
+
+
+                endif
+            endif ! end of if beta
+        enddo
+
+        call modpop_sort_vectors_by_values(Chi_M_IN (:,LICZBA_MODOW+1:N),K_M_IN (LICZBA_MODOW+1:N),-1)
+        call modpop_sort_vectors_by_values(Chi_M_OUT(:,LICZBA_MODOW+1:N),K_M_OUT(LICZBA_MODOW+1:N),-1)
+
+        LICZBA_MODOW_EVANESCENTYCH = 0
+        ! bierzemy tylko te mody ktore nie maja czesci falowej (tj tylko czyste evanescentne exp(+/-kx))
+        do i = LICZBA_MODOW + 1 , N
+            if( abs(imag(K_M_OUT(i))) < 1.0E-6 ) then
+                LICZBA_MODOW_EVANESCENTYCH = LICZBA_MODOW_EVANESCENTYCH + 1
+                Chi_M_IN (:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_IN(:,i)
+                K_M_IN   (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_IN(i)
+                Chi_M_OUT(:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_OUT(:,i)
+                K_M_OUT  (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_OUT(i)
+            endif
+        enddo
+
+        print*,"-------------------------------------------------------------"
+        print*," K evan.  :         Input mod.      |         Output mod."
+        print*,"-------------------------------------------------------------"
+        do i = LICZBA_MODOW + 1 , LICZBA_MODOW_EVANESCENTYCH + LICZBA_MODOW
+             print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",K_M_IN(i)*L2LR," | ",K_M_OUT(i)*L2LR
+        enddo
+        print*,"-------------------------------------------------------------"
 
         deallocate(ALPHA)
         deallocate(BETA)
@@ -842,7 +680,7 @@ MODULE modpop
         deallocate(WORK)
         deallocate(Z)
 
-        deallocate(Mzero)
+
         deallocate(Mdiag)
         deallocate(Mham )
         deallocate(MA   )
@@ -850,6 +688,54 @@ MODULE modpop
         deallocate(Uvec )
 
     end subroutine modpop_calc_modes_from_wfm
+
+
+    subroutine modpop_sort_vectors_by_values(vectors,vals,order)
+        complex*16,dimension(:,:) :: vectors
+        complex*16,dimension(:)   :: vals
+        integer :: order
+        complex*16,dimension(:),allocatable  :: tmpvec
+        complex*16 :: tmpval
+
+        integer :: i , j , n , nvec , imin
+
+
+        n    = size(vals)
+        nvec = size(vectors(:,1))
+
+
+        allocate(tmpvec(nvec))
+        if(TRANS_DEBUG) then
+         print*,"Sortowanie wektorow:"
+         print*,"  Liczba wektor  :"  ,n
+         print*,"  Rozmiar wektora:",nvec
+        endif
+
+
+        do i = 1 , n
+            imin   = i
+            do j = i+1 , n
+               if(abs(vals(j)) > 1.0e-10) then
+               if(order > 0 ) then
+                    if( abs(vals(imin)) < abs(vals(j)) ) imin = j
+               endif
+               if(order < 0 ) then
+                    if( abs(vals(imin)) > abs(vals(j)) ) imin = j
+               endif
+               endif
+            enddo
+
+            tmpval     = vals(i)
+            vals(i)    = vals(imin)
+            vals(imin) = tmpval
+
+            tmpvec          = vectors(:,i)
+            vectors(:,i)    = vectors(:,imin)
+            vectors(:,imin) = tmpvec
+        enddo
+
+        deallocate(tmpvec)
+    end subroutine modpop_sort_vectors_by_values
 
 
 END MODULE modpop

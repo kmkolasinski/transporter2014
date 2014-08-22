@@ -128,7 +128,7 @@ module modsystem
                 GFLAGS(ni,nj) = B_WEJSCIE
                 ZFLAGS(ni,nj) = nrz ! przypisujemy fladze numer wejscia
             enddo
-            if(zrodla(nrz)%bKierunek)then
+            if(zrodla(nrz)%bKierunek == ZRODLO_KIERUNEK_PRAWO)then
                 ni = zrodla(nrz)%polozenia(1,1) + 1
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni + in_len - 1
@@ -241,8 +241,13 @@ module modsystem
             nj = zrodla(nrz)%polozenia(i,2)
             VPHI(GINDEX(ni,nj)) = zrodla(nrz)%Fj(i)
         enddo
+        call reset_clock()
         call wypelnij_macierz()
+
+
         call convert_to_HB(MATASIZE,IDXA,HBROWS)
+
+
         call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI)
 
         call oblicz_TR(nrz,mod_in)
@@ -358,7 +363,7 @@ module modsystem
                     !                      ------------------------>
                     !
                     ! ------------------------------------------------------------------
-                    if( zrodla(nzrd)%bKierunek == .true. ) then
+                    if( zrodla(nzrd)%bKierunek == ZRODLO_KIERUNEK_PRAWO ) then
 
                     ni   = i
                     nj   = j ! globalne polozenia na siatce
