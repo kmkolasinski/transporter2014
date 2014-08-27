@@ -60,17 +60,20 @@ call utworz_system()
 
 call system_rozwiaz_problem(1,TR_MAT)
 
-print*,sum(TR_MAT(1,:))
-print*,sum(TR_MAT(2,:))
-print*,sum(TR_MAT(3,:))
-print*,sum(TR_MAT(4,:))
-print*,sum(TR_MAT(:,:))
-print*,TRANS_R,TRANS_T
+!print*,sum(TR_MAT(1,:))
+!print*,sum(TR_MAT(2,:))
+!print*,sum(TR_MAT(3,:))
+!print*,sum(TR_MAT(4,:))
+!print*,sum(TR_MAT(:,:))
+!print*,TRANS_R,TRANS_T
 
-call system_zapisz_do_pliku("phi.txt",ZAPISZ_PHI);
-call system_zapisz_do_pliku("J.txt",ZAPISZ_J);
+open(unit=222,file="T.txt")
+write(222,"(20e20.8)"),atomic_Ef,qpc_w,TRANS_T,TRANS_R,sum(TR_MAT(2,:)),sum(TR_MAT(3,:))+sum(TR_MAT(4,:)),TRANS_R+TRANS_T
+close(222)
 
 
+!call system_zapisz_do_pliku("phi.txt",ZAPISZ_PHI);
+!call system_zapisz_do_pliku("J.txt",ZAPISZ_J);
 !call system_zapisz_do_pliku("flagi1.txt",ZAPISZ_FLAGI);
 !call system_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
 
