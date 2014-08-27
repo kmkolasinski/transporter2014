@@ -31,6 +31,7 @@ implicit none
         complex*16,dimension(:),allocatable       :: ck       ! amplitudy wchodzace
         complex*16,dimension(:),allocatable       :: dk       ! amplitudy odbite
         doubleprecision,dimension(:),allocatable  :: Jin,Jout ! prady wejsciowe zwiazane z ck i wyjsciowe - dk
+
         complex*16,dimension(200,200)             :: m_r,m_t  ! macierz wspolczynnikow odbicia i transmisji
         complex*16,dimension(:,:),allocatable     :: Aij
         complex*16,dimension(:,:),allocatable     :: Sij
@@ -257,10 +258,11 @@ contains
 
         double precision :: dx, Ef, Bz
         complex*16,dimension(:,:),allocatable :: tempB
+        complex*16 :: ctmp
         integer :: N ! liczba oczek dla zrodla
         integer :: lModow,lModowEvan
         ! zmienne pomocnicze
-        integer :: i,j,k,ntmp
+        integer :: i,j,k,ntmp,l
 
         dx  = pdx*L2LR    ! konwertujemy do jednostek donorowych
         Ef  = pEf/1000.0/Rd
@@ -409,28 +411,48 @@ contains
             ! ---------------------------------------------------------------- !
         case (ZRODLO_KIERUNEK_GORA)
             ! Wzynaczanie wektora pomocniczego
-            do k = 1 , ntmp
-                if( k <= zrodlo%liczba_modow) then
-                    zrodlo%deltamk(k) = 2*II*sin(- zrodlo%k_m_in(k)*DX + DX*Bz*zrodlo%hny )
-                else
-                    zrodlo%deltamk(k) = exp( zrodlo%k_m_out(k)*DX + II*DX*Bz*zrodlo%hny ) - exp( -zrodlo%k_m_out(k)*DX - II*DX*Bz*zrodlo%hny)
-                endif
-            enddo
+            zrodlo%deltamk(:) = 0 ! dajemy zero bo nie bedzie uzywane, bo tutaj cechowanie zalezy jeszcze od x
+
             ! ----------------------------------------------------------------------
-            ! Macierze warunkow brzegowych dla zrodel skierowanych w prawo ------>
+            ! Macierze warunkow brzegowych dla zrodel skierowanych w gore ------>
             ! Aij    = < X(-i) | X(+j) >
             ! Sij^-1 = < X(-i) | X(-j) >
             ! ----------------------------------------------------------------------
             do i = 1 , ntmp
             do j = 1 , lModow
-                zrodlo%Aij(i,j) = sum( conjg(zrodlo%Chi_m_out(:,i))*zrodlo%Chi_m_in (:,j) )*DX
+                zrodlo%Aij(i,j) = 0
+                do k = 1 , zrodlo%N
+
+
+                    ctmp = exp( (zrodlo%polozenia(k,2))*DX*(&
+                            &II*zrodlo%k_m_in(j) +&
+                            &II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+
+
+                    zrodlo%Aij(i,j) = zrodlo%Aij(i,j) + ctmp*( conjg(zrodlo%Chi_m_out(k,i))*zrodlo%Chi_m_in (k,j) )*DX
+                enddo
+
+                !zrodlo%Aij(i,j) = sum( conjg(zrodlo%Chi_m_out(:,i))*zrodlo%Chi_m_in (:,j) )*DX
             end do
             end do
 
             allocate(tempB(ntmp,1))
             do i = 1 , ntmp
             do j = 1 , ntmp
-                zrodlo%Sij(i,j) = sum( conjg(zrodlo%Chi_m_out(:,i))*zrodlo%Chi_m_out(:,j) )*DX
+                zrodlo%Sij(i,j) = 0
+                do k = 1 , zrodlo%N
+                    if( j <= lModow) then
+                    ctmp = exp( (zrodlo%polozenia(k,2))*DX*(&
+                            &-II*zrodlo%k_m_in(j) +&
+                            &II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+                    else
+                    ctmp = exp( zrodlo%polozenia(k,2)*DX*(&
+                            &-zrodlo%k_m_in(j) +&
+                            &II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+                    endif
+                    zrodlo%Sij(i,j) = zrodlo%Sij(i,j) + ctmp*( conjg(zrodlo%Chi_m_out(k,i))*zrodlo%Chi_m_out(k,j) )*DX
+                enddo
+
             end do
             end do
             tempB = 1
@@ -441,6 +463,72 @@ contains
             do i = 1 , ntmp
             do j = 1 , N
                 zrodlo%SijChiAuxMat(i,j) = sum( zrodlo%Sij(i,:)*conjg(zrodlo%Chi_m_out(j,:)) )
+            end do
+            end do
+
+
+            ! ---------------------------------------------------------------- !
+            case (ZRODLO_KIERUNEK_DOL)
+            ! Wzynaczanie wektora pomocniczego
+            zrodlo%deltamk(:) = 0 ! dajemy zero bo nie bedzie uzywane, bo tutaj cechowanie zalezy jeszcze od x
+
+            ! ----------------------------------------------------------------------
+            ! Macierze warunkow brzegowych dla zrodel skierowanych w dol  <-------
+            ! Aij    = < X(+i) | X(-j) >
+            ! Sij^-1 = < X(+i) | X(+j) >
+            ! ----------------------------------------------------------------------
+            do i = 1 , ntmp
+            do j = 1 , lModow
+                zrodlo%Aij(i,j) = 0
+                do k = 1 , zrodlo%N
+!                    ctmp = exp( zrodlo%polozenia(k,2)*DX*(&
+!                            &-II*zrodlo%k_m_in(j) +&
+!                            & II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+
+                    ctmp = exp( zrodlo%polozenia(k,2)*DX*(-2*II*zrodlo%k_m_in(j) ) )
+
+                    zrodlo%Aij(i,j) = zrodlo%Aij(i,j) + ctmp*( conjg(zrodlo%Chi_m_in(k,i))*zrodlo%Chi_m_out (k,j) )*DX
+                enddo
+
+
+            end do
+            end do
+
+            allocate(tempB(ntmp,1))
+            do i = 1 , ntmp
+            do j = 1 , ntmp
+                zrodlo%Sij(i,j) = 0
+                do k = 1 , zrodlo%N
+                    if( j <= lModow) then
+                    ctmp = exp( (zrodlo%polozenia(k,2))*DX*( &
+                            &+II*zrodlo%k_m_in(j) + &
+                            & II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+                    else
+                    ctmp = exp( (zrodlo%polozenia(k,2))*DX*( &
+                            & zrodlo%k_m_out(j) + &
+                            & II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+                    endif
+
+                    zrodlo%Sij(i,j) = zrodlo%Sij(i,j) + ctmp*( conjg(zrodlo%Chi_m_in(k,i))*zrodlo%Chi_m_in(k,j) )*DX
+
+                enddo
+
+            end do
+            end do
+            tempB = 1
+            call zgaussj(zrodlo%Sij(1:ntmp,1:ntmp),ntmp,ntmp,tempB(1:ntmp,1),1,1)
+            deallocate(tempB)
+
+            ! Wyznaczanie macierzy pomocniczej zawierajacej iloczyny macierzy Sij i wektora Chi
+            do i = 1 , ntmp
+            do j = 1 , N
+                zrodlo%SijChiAuxMat(i,j) = sum( zrodlo%Sij(i,:)*conjg(zrodlo%Chi_m_in(j,:)) )
+!                zrodlo%SijChiAuxMat(i,j)  = 0
+!
+!                do l = 1 , ntmp
+!                    zrodlo%SijChiAuxMat(i,j) =  zrodlo%SijChiAuxMat(i,j)  +  zrodlo%Sij(i,l)*conjg(zrodlo%Chi_m_in(j,l)) * &
+!                    & exp( (zrodlo%polozenia(j,2)*dx)*(-II*zrodlo%k_m_in(l) - II*Bz*( zrodlo%polozenia(j,1) * dx  - zrodlo%hnx )) )
+!                enddo
             end do
             end do
         case default
@@ -467,7 +555,7 @@ contains
         doubleprecision :: pdx
         integer         :: i , pi, pj, k , p, q
         complex*16      :: post , Xkn , deltapk , deltamk , kvec
-        doubleprecision :: dx, Ef, Bz
+        doubleprecision :: dx, Ef, Bz , ypos , xpos , bpart
         dx  = pdx
         Ef  = atomic_Ef/1000.0/Rd
         BZ  = BtoDonorB(atomic_Bz)
@@ -488,6 +576,8 @@ contains
                 zrodlo%Fj(i) = 0
                 pi         =  zrodlo%polozenia(i,1)
                 pj         =  zrodlo%polozenia(i,2)
+                xpos       =  (pi) * dx
+                ypos       =  (pj) * dx
 
                 select case (zrodlo%bKierunek)
                 ! ---------------------------------------------------------------- !
@@ -525,9 +615,37 @@ contains
                         zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_in(i,k)
                     enddo
 
+                ! ---------------------------------------------------------------- !
+                ! Wypelniamy wektor wyrazow wolnych dla zrodej skierowanych w gore
+                !
+                !                        --------------->
+                !
+                case (ZRODLO_KIERUNEK_GORA)
+                    post             = -(0.5/DX/DX)
+                    bpart            = Bz*( xpos  - zrodlo%hnx )
+                    do k = 1 , zrodlo%liczba_modow
+
+                        kvec         = zrodlo%k_m_in(k)
+                        deltamk      = exp( (ypos +  DX)*(+II*kvec + II*bpart) ) &
+                                    &- exp( (ypos -  DX)*(+II*kvec + II*bpart) )
+                        zrodlo%Fj(i) = zrodlo%Fj(i) + zrodlo%ck(k)*deltamk*zrodlo%Chi_m_in (i,k)
+
+                    enddo
+                    do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+
+                        if( k <= zrodlo%liczba_modow) then
+                            deltamk = exp( (ypos +  DX)*(-II*zrodlo%k_m_in(k) + II*bpart) ) - exp(  (ypos-DX)*(-II*zrodlo%k_m_in(k) + II*bpart) )
+                        else
+                            deltamk = exp( (ypos + DX)*(-zrodlo%k_m_in(k) + II*bpart)  ) - exp( (ypos-DX)*( -zrodlo%k_m_in(k) + II*bpart) )
+                        endif
+
+                        Xkn          = zrodlo%SijAijCkAuxVec(k)
+                        zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_out(i,k)
+                    enddo
+                case (ZRODLO_KIERUNEK_DOL)
+                    print*,"MODZRODLO: Zrodlo wejsciowe nie obslugiwane!"
+                    stop
                 endselect
-
-
                 zrodlo%Fj(i) = zrodlo%Fj(i)*post
 
         enddo ! end of do i=1, zrodlo%N
@@ -549,7 +667,7 @@ contains
         class(czrodlo)  :: zrodlo
         doubleprecision :: pdx
         integer         :: v,i
-        doubleprecision :: dx ,Ef ,Bz , bpart
+        doubleprecision :: dx ,Ef ,Bz , bpart , ypos
         integer         :: k,p
         complex*16      :: Xkn , deltamk , deltapk , kvec , tmpXkn
 
@@ -582,24 +700,49 @@ contains
                 Xkn = Xkn + zrodlo%deltamk(k)*zrodlo%Chi_m_in(v,k)*zrodlo%SijChiAuxMat(k,i);
             enddo
 
-
+        ! -----------------------------------------------------------------
+        !       Wyznaczamy alpha(v,i) dla wejsc skierowanych w gore
+        !
+        !                       --------------------->
+        !
+        ! -----------------------------------------------------------------
 
         case (ZRODLO_KIERUNEK_GORA)
 
-            bpart = DX*Bz*( zrodlo%polozenia(v,1)*dx -  zrodlo%hnx)
-
+            bpart = Bz*( zrodlo%polozenia(v,1)*dx -  zrodlo%hnx)
+            ypos  = (zrodlo%polozenia(v,2))*dx
             do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-
                 deltamk = 0
                 if( k <= zrodlo%liczba_modow) then
-                    deltamk = 2*II*sin( -zrodlo%k_m_in(k)*DX + bpart )
+                    deltamk = exp( (ypos + DX)*(-II*zrodlo%k_m_in(k) + II*bpart) ) - exp(  (ypos-DX)*(-II*zrodlo%k_m_in(k) + II*bpart) )
                 else
-                    deltamk = exp( zrodlo%k_m_out(k)*DX + II*bpart ) - exp( -zrodlo%k_m_out(k)*DX - II*bpart)
+                    deltamk = exp( (ypos + DX)*(-zrodlo%k_m_in(k) + II*bpart)  )   - exp( (ypos-DX)*( -zrodlo%k_m_in(k) + II*bpart) )
                 endif
+                Xkn = Xkn + deltamk*zrodlo%Chi_m_out(v,k) * zrodlo%SijChiAuxMat(k,i);
 
-
-                Xkn = Xkn + deltamk*zrodlo%Chi_m_out(v,k)*zrodlo%SijChiAuxMat(k,i);
             enddo
+
+        ! -----------------------------------------------------------------
+        !       Wyznaczamy alpha(v,i) dla wejsc skierowanych w dol
+        !
+        !                       <---------------------
+        !
+        ! -----------------------------------------------------------------
+        case (ZRODLO_KIERUNEK_DOL)
+
+            bpart = Bz*( zrodlo%polozenia(v,1)*dx -  zrodlo%hnx)
+            ypos  = (zrodlo%polozenia(v,2))*dx
+            do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
+                deltamk = 0
+                if( k <= zrodlo%liczba_modow) then
+                    deltamk = exp( (ypos + DX)*(II*zrodlo%k_m_in(k) + II*bpart) ) - exp(  (ypos-DX)*(II*zrodlo%k_m_in(k) + II*bpart) )
+                else
+                    deltamk = exp( (ypos + DX)*(zrodlo%k_m_in(k) + II*bpart)  ) - exp( (ypos-DX)*( zrodlo%k_m_in(k) + II*bpart) )
+
+                endif
+                Xkn = Xkn + deltamk * zrodlo%Chi_m_in(v,k) * zrodlo%SijChiAuxMat(k,i);
+            enddo
+
         endselect
 
         zrodlo_alfa_v_i = Xkn*dx
@@ -631,14 +774,14 @@ contains
                     !                          <----------------
                     !
                     ! ------------------------------------------------------------------
-                    case (ZRODLO_KIERUNEK_PRAWO)
+                    case (ZRODLO_KIERUNEK_PRAWO,ZRODLO_KIERUNEK_GORA)
                         alpha_p = alpha_p + dx*conjg(zrodlo%Chi_m_out(i,p))*VPHI(GINDEX(pi,pj))
                     ! ------------------------------------------------------------------
                     !
                     !                          ---------------->
                     !
                     ! ------------------------------------------------------------------
-                    case (ZRODLO_KIERUNEK_LEWO)
+                    case (ZRODLO_KIERUNEK_LEWO,ZRODLO_KIERUNEK_DOL)
                         alpha_p = alpha_p + dx*conjg(zrodlo%Chi_m_in(i,p))*VPHI(GINDEX(pi,pj))
                     endselect
 
@@ -650,9 +793,10 @@ contains
                 dk = dk + zrodlo%Sij(k,p)*( alpha_p - beta_p )
             enddo ! end do p
             zrodlo%dk(k) = dk
+
         enddo ! end do k
 
-
+        call zrodlo%zrodlo_wypisz_ckdk()
 
     end subroutine zrodlo_oblicz_dk
 
@@ -686,6 +830,12 @@ contains
                     pj    = zrodlo%polozenia(i,2)
                     Jin   = Jin  + abs(zrodlo%Chi_m_in (i,k))**2*sin( -dx*dx*pj*Bz + dx*(+kvec + zrodlo%hnY*Bz) )
                     Jout  = Jout + abs(zrodlo%Chi_m_out(i,k))**2*sin( -dx*dx*pj*Bz + dx*(-kvec + zrodlo%hnY*Bz) )
+                enddo ! end of i
+            case (ZRODLO_KIERUNEK_GORA,ZRODLO_KIERUNEK_DOL)
+                do i = 1 , zrodlo%N
+                    pj    = zrodlo%polozenia(i,1)
+                    Jin   = Jin  + abs(zrodlo%Chi_m_in (i,k))**2*sin( +dx*dx*pj*Bz + dx*(+kvec - zrodlo%hnX*Bz) )
+                    Jout  = Jout + abs(zrodlo%Chi_m_out(i,k))**2*sin( +dx*dx*pj*Bz + dx*(-kvec - zrodlo%hnX*Bz) )
                 enddo ! end of i
             endselect
 
