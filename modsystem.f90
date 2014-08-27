@@ -24,6 +24,7 @@ module modsystem
     integer,dimension(:,:),allocatable            :: IDXA   ! INDEKSY MACIERZY (ROW,COL)
     complex*16,dimension(:),allocatable           :: VPHI   ! SZUKANA FUNKCJA FALOWA, PRZELICZANA POTEM NA LDOS
     complex*16,dimension(:,:),allocatable         ::  PHI   ! FUNKCJA FALOWA ZAPISANA NA DWUWYMIAROWEJ MACIERZY
+    double precision,dimension(:,:), allocatable  :: CURRENT! FUNKCJA GESTOSCI PRADU PRAWDOPODOBIENSTWA
 
     ! rodzaje zapisu do pliku
     ENUM,BIND(C)
@@ -32,13 +33,15 @@ module modsystem
         ENUMERATOR :: ZAPISZ_KONTUR     = 2
         ENUMERATOR :: ZAPISZ_INDEKSY    = 3
         ENUMERATOR :: ZAPISZ_PHI        = 4
+        ENUMERATOR :: ZAPISZ_J          = 5
     END ENUM
 
-    public :: ZAPISZ_FLAGI , ZAPISZ_POTENCJAL , ZAPISZ_KONTUR , ZAPISZ_INDEKSY , ZAPISZ_PHI
+    public :: ZAPISZ_FLAGI , ZAPISZ_POTENCJAL , ZAPISZ_KONTUR , ZAPISZ_INDEKSY , ZAPISZ_PHI , ZAPISZ_J
     public :: zrodla,UTOTAL,GFLAGS,GINDEX
     public :: system_inicjalizacja , system_zwalnienie_pamieci , system_inicjalizacja_ukladu
     public :: system_zapisz_do_pliku , system_rozwiaz_problem
-    public :: system_gauss
+    public :: system_gauss , system_dodaj_lorentza , system_dodaj_pionowy_slupek_potencjalu
+    public :: system_fermi, system_fermiT , system_dfermidE
     public :: TRANS_T,TRANS_R
     contains
 
@@ -72,6 +75,7 @@ module modsystem
         allocate( GINDEX(nx,ny))
         allocate( UTOTAL(nx,ny))
         allocate(    PHI(nx,ny))
+        allocate(CURRENT(nx,ny))
         GFLAGS = B_NORMAL
         ZFLAGS = 0
         GINDEX = 0
@@ -99,6 +103,7 @@ module modsystem
         if(allocated(ZFLAGS))   deallocate(ZFLAGS)
         if(allocated(GINDEX))   deallocate(GINDEX)
         if(allocated(UTOTAL))   deallocate(UTOTAL)
+        if(allocated(CURRENT))  deallocate(CURRENT)
         if(allocated(PHI))      deallocate(PHI)
         do i = 1 , no_zrodel
             call zrodla(i)%zrodlo_zwolnij_pamiec()
@@ -113,7 +118,7 @@ module modsystem
     ! in_len - dlugosc na jaka od wejsc zostanie utworzona flaga B_NORMAL
     ! smooth_rad - promien wygladzania ostrych katow w ukladzie
     ! smooth_iter - liczba iteracji wygladzania
-    ! ------------------------------------------------------------
+    ! ------------------------------------------------------------caliente
     subroutine system_inicjalizacja_ukladu(in_len,smooth_rad,smooth_iter)
         integer ,intent(in) :: in_len,smooth_rad,smooth_iter
         integer :: soft_iter , iii , jjj , norm_iter , empty_iter
@@ -136,52 +141,36 @@ module modsystem
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni + in_len - 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-                if(nj==1) nj = 2
-                if(mj==NY)mj = NY-1
+!                if(nj==1) nj = 2
+!                if(mj==NY)mj = NY-1
                 GFLAGS(ni:mi,nj:mj) = B_NORMAL
             case (ZRODLO_KIERUNEK_LEWO)
                 ni = zrodla(nrz)%polozenia(1,1) - 1
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni - in_len + 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-                if(nj==1) nj = 2
-                if(mj==NY)mj = NY-1
+!                if(nj==1) nj = 2
+!                if(mj==NY)mj = NY-1
                 GFLAGS(mi:ni,nj:mj) = B_NORMAL
             case (ZRODLO_KIERUNEK_GORA)
                 ni = zrodla(nrz)%polozenia(1,1)
                 nj = zrodla(nrz)%polozenia(1,2) + 1
                 mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
                 mj = nj + in_len - 1
-                if(nj==1) nj = 2
-                if(mj==NY)mj = NY-1
+!                if(nj==1) nj = 2
+!                if(mj==NY)mj = NY-1
                 GFLAGS(ni:mi,nj:mj) = B_NORMAL
             case (ZRODLO_KIERUNEK_DOL)
                 ni = zrodla(nrz)%polozenia(1,1)
                 nj = zrodla(nrz)%polozenia(1,2) - 1
                 mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
                 mj = nj - in_len + 1
-                if(nj==1) nj = 2
-                if(mj==NY)mj = NY-1
-                GFLAGS(mi:ni,nj:mj) = B_NORMAL
+!                if(nj==1) nj = 2
+!                if(mj==NY)mj = NY-1
+                GFLAGS(ni:mi,mj:nj) = B_NORMAL
             endselect
 
-!            if(zrodla(nrz)%bKierunek == ZRODLO_KIERUNEK_PRAWO)then
-!                ni = zrodla(nrz)%polozenia(1,1) + 1
-!                nj = zrodla(nrz)%polozenia(1,2)
-!                mi = ni + in_len - 1
-!                mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-!                if(nj==1) nj = 2
-!                if(mj==NY)mj = NY-1
-!                GFLAGS(ni:mi,nj:mj) = B_NORMAL
-!            else
-!                ni = zrodla(nrz)%polozenia(1,1) - 1
-!                nj = zrodla(nrz)%polozenia(1,2)
-!                mi = ni - in_len + 1
-!                mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-!                if(nj==1) nj = 2
-!                if(mj==NY)mj = NY-1
-!                GFLAGS(mi:ni,nj:mj) = B_NORMAL
-!            endif
+
         enddo
 
         ! -------------------------------------------------------------
@@ -246,8 +235,9 @@ module modsystem
     ! --------------------------------------------------------------------
     ! Rozwiazywanie problemu dla zrodla o podanym numerze - nrz
     ! --------------------------------------------------------------------
-    subroutine system_rozwiaz_problem(nrz)
+    subroutine system_rozwiaz_problem(nrz,TR_MAT)
         integer,intent(in)  :: nrz
+        double precision,dimension(:,:), allocatable  :: TR_MAT
         integer,allocatable :: HBROWS(:)
         integer :: i,j,ni,nj,mod_in
 
@@ -268,34 +258,53 @@ module modsystem
         allocate(VPHI(TRANS_MAXN))
         allocate(HBROWS(TRANS_MAXN+1))
 
-        mod_in = 1
-        zrodla(nrz)%ck(:) = 0
-        zrodla(nrz)%ck(mod_in) = 1
-        call zrodla(nrz)%zrodlo_oblicz_Fj(dx)
-        VPHI = 0
-        do i = 2 , zrodla(nrz)%N - 1
-            ni = zrodla(nrz)%polozenia(i,1)
-            nj = zrodla(nrz)%polozenia(i,2)
-            VPHI(GINDEX(ni,nj)) = zrodla(nrz)%Fj(i)
-        enddo
-        call reset_clock()
+        ! tablice z wspolczynnikami T i R
+        if(allocated(TR_MAT))deallocate(TR_MAT)
+        allocate(TR_MAT(no_zrodel,zrodla(nrz)%liczba_modow))
+
+        TR_MAT = 0
+
+        CURRENT = 0;
+        PHI     = 0
+
+        TRANS_R = 0
+        TRANS_T = 0
+        ! --------------------------------------------------------------------
+        !
+        ! --------------------------------------------------------------------
         call wypelnij_macierz()
-
-
         call convert_to_HB(MATASIZE,IDXA,HBROWS)
 
+        do mod_in = 1 , zrodla(nrz)%liczba_modow
 
-        call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI)
+            zrodla(nrz)%ck(:)      = 0
+            zrodla(nrz)%ck(mod_in) = 1
 
-        call oblicz_TR(nrz,mod_in)
+            call zrodla(nrz)%zrodlo_oblicz_Fj(dx)
+            VPHI = 0
+            do i = 2 , zrodla(nrz)%N - 1
+                ni = zrodla(nrz)%polozenia(i,1)
+                nj = zrodla(nrz)%polozenia(i,2)
+                VPHI(GINDEX(ni,nj)) = zrodla(nrz)%Fj(i)
+            enddo
 
-        PHI  = 0
-        do i = 1 , Nx
-        do j = 1 , Ny
-            if(GINDEX(i,j) > 0) PHI(i,j) = VPHI(GINDEX(i,j))
-        enddo
-        enddo
 
+            call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI)
+            call oblicz_TR(nrz,mod_in)
+            call system_oblicz_J()
+
+            do i = 1 ,no_zrodel
+                TR_MAT(i,mod_in) = sum(abs(zrodla(i)%Jout(:)) )
+            enddo
+
+
+            do i = 1 , Nx
+            do j = 1 , Ny
+                if(GINDEX(i,j) > 0) PHI(i,j) = PHI(i,j) + abs( VPHI(GINDEX(i,j)) )**2
+            enddo
+            enddo
+
+        enddo ! end of petla po modach
 
         deallocate(CMATA)
         deallocate(IDXA)
@@ -408,14 +417,14 @@ module modsystem
                     !
                     ! ------------------------------------------------------------------
                     case (ZRODLO_KIERUNEK_PRAWO)
-                        ln   = j - zrodla(nzrd)%polozenia(1,2) + 1
+                        ln   = j - zrodla(nzrd)%polozenia(1,2) + 1 ! lokalny indeks
 
 
                         cmatA(itmp)   = CMPLX(-0.5/DX/DX*2*cos(DX*DX*(nj)*BZ))
                         idxA (itmp,1) = GINDEX(i  ,j)
                         idxA (itmp,2) = GINDEX(i+1,j)
                         itmp = itmp + 1
-                        post = 0.5/DX/DX*(EXP(+II*DX*DX*(nj)*BZ))
+                        post = 0.5/DX/DX*(EXP(+II*DX*DX*(nj)*BZ)) ! zmienna pomocnicza
                     ! ------------------------------------------------------------------
                     ! Zrodla lewe:
                     !
@@ -431,18 +440,38 @@ module modsystem
                         idxA (itmp,2) = GINDEX(i-1,j)
                         itmp = itmp + 1
                         post =-0.5/DX/DX*(EXP(-II*DX*DX*(nj)*BZ))
-
+                    ! ------------------------------------------------------------------
+                    ! Zrodla dolne:
+                    !
+                    !                      ------------------------>
+                    !
+                    ! ------------------------------------------------------------------
                     case (ZRODLO_KIERUNEK_GORA)
 
                         ln   = i - zrodla(nzrd)%polozenia(1,1) + 1
 
-                        cmatA(itmp)   = CMPLX(-0.5/DX/DX*2*cos(DX*DX*(nj)*BZ))
+                        cmatA(itmp)   = CMPLX(-0.5/DX/DX*2)
                         idxA (itmp,1) = GINDEX(i  ,j)
                         idxA (itmp,2) = GINDEX(i,j+1)
                         itmp = itmp + 1
 
+                        post = 0.5/DX/DX
+                    ! ------------------------------------------------------------------
+                    ! Zrodla gorne:
+                    !
+                    !                      <------------------------
+                    !
+                    ! ------------------------------------------------------------------
+                    case (ZRODLO_KIERUNEK_DOL)
 
-                        post = 0.5/DX/DX*(EXP(+II*DX*DX*(nj)*BZ))
+                        ln   = i - zrodla(nzrd)%polozenia(1,1) + 1
+
+                        cmatA(itmp)   = CMPLX(-0.5/DX/DX*2)
+                        idxA (itmp,1) = GINDEX(i  ,j)
+                        idxA (itmp,2) = GINDEX(i,j-1)
+                        itmp = itmp + 1
+
+                        post = -0.5/DX/DX
                     endselect
 
                     select case (zrodla(nzrd)%bKierunek)
@@ -490,6 +519,7 @@ module modsystem
                     !
                     ! ------------------------------------------------------------------
                     case (ZRODLO_KIERUNEK_GORA,ZRODLO_KIERUNEK_DOL)
+
                     do nn = 2 , zrodla(nzrd)%N - 1
                     pni   = zrodla(nzrd)%polozenia(nn,1)
 
@@ -502,14 +532,14 @@ module modsystem
                         itmp = itmp + 1
 
                     else if( nn == ln+1  ) then
-                        cmatA(itmp) = CMPLX(-0.5/DX/DX) &
+                        cmatA(itmp) = CMPLX(-0.5/DX/DX)*(EXP(-II*DX*DX*(nj)*BZ)) &
                         &   + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
                         idxA(itmp,1) = GINDEX(ni,nj)
                         idxA(itmp,2) = GINDEX(pni,nj)
                         itmp = itmp + 1
                     else if( nn == ln-1  ) then
 
-                        cmatA(itmp) = CMPLX(-0.5/DX/DX) &
+                        cmatA(itmp) = CMPLX(-0.5/DX/DX)*(EXP(+II*DX*DX*(nj)*BZ)) &
                         &   + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
                         idxA(itmp,1) = GINDEX(ni,nj)
                         idxA(itmp,2) = GINDEX(pni,nj)
@@ -520,6 +550,7 @@ module modsystem
                         idxA(itmp,2) = GINDEX(pni,nj)
                         itmp = itmp + 1
                     endif
+
                     enddo
                     endselect
 
@@ -564,8 +595,8 @@ module modsystem
             call zrodla(i)%zrodlo_wypisz_JinJout()
         enddo
 
-        TRANS_R = sum( abs(zrodla(nrz)%Jout(:)) )
-        TRANS_T = 0
+        TRANS_R = TRANS_R + sum( abs(zrodla(nrz)%Jout(:)) )
+        !TRANS_T = 0
         do i = 1 ,no_zrodel
             if(i /= nrz) TRANS_T = TRANS_T + sum( abs(zrodla(i)%Jout(:)) )
         enddo
@@ -584,7 +615,141 @@ module modsystem
             system_gauss = amplitude*exp(-sigma*(( x - xpos )**2+( y - ypos )**2)*DX*DX)
     end function system_gauss
 
+    ! rozklad femiego
+    double precision function system_fermi(E,Ef) result( rval )
+    double precision :: E,Ef
+        rval = 1.0/(exp( (E-Ef)/kbT ) + 1)
+    end function  system_fermi
+    double precision function system_fermiT(E,Ef,T) result( rval )
+    double precision :: E,Ef,T
+        rval = 1.0/(exp( (E-Ef)/T ) + 1)
+    end function  system_fermiT
+    ! pochodna rozkladu rozklad femiego
+    double precision function system_dfermidE(E,Ef,dE) result( rval )
+    double precision :: E,Ef,dE
+        rval = (system_fermi(E+dE,Ef)-system_fermi(E-dE,Ef))/dE
+    end function  system_dfermidE
 
+    ! -------------------------------------------------------------------
+    ! Podajemy    w jednostkach SI U w meV dx,dy w nm.
+    ! -------------------------------------------------------------------
+    subroutine system_dodaj_lorentza(U,ldx,ldy,x0,y0)
+        double precision, intent(in) :: U,ldx,ldy,x0,y0
+        integer :: i,j,rozbieg,ni,nj,mi,mj,nrz
+        double precision :: x,y,ddx,ddy,dU,dx0,dy0
+
+
+
+        dU = U/1000.0/Rd
+        ddx= ldx*L2LR
+        ddy= ldy*L2LR
+        dx0= x0*L2LR
+        dy0= y0*L2LR
+
+        if(TRANS_DEBUG == 1 ) then
+            print*," Dodawanie Lorentza:",U,ldx,ldy,x0,y0
+            print*," Dodawanie Lorentza[Donor]:",dU,ddx,ddy,dx0,dy0
+        endif
+
+        do i = 1 , NX
+        do j = 1 , NY
+            x = i*DX
+            y = j*DX
+            UTOTAL(i,j) = UTOTAL(i,j) + dU/( 1 + ((x-dx0)/ddx)**2 + ((y-dy0)/ddy)**2 )
+        enddo
+        enddo
+
+        ! zerowanie potencjalu przy wejsciach
+        rozbieg = 20
+        do nrz = 1 , no_zrodel
+            select case (zrodla(nrz)%bKierunek)
+            case (ZRODLO_KIERUNEK_PRAWO)
+                ni = zrodla(nrz)%polozenia(1,1) + 1
+                nj = zrodla(nrz)%polozenia(1,2)
+                mi = ni + rozbieg - 1
+                mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
+                UTOTAL(ni:mi,nj:mj) = 0
+            case (ZRODLO_KIERUNEK_LEWO)
+                ni = zrodla(nrz)%polozenia(1,1) - 1
+                nj = zrodla(nrz)%polozenia(1,2)
+                mi = ni - rozbieg + 1
+                mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
+                UTOTAL(ni:mi,nj:mj) = 0
+            case (ZRODLO_KIERUNEK_GORA)
+                ni = zrodla(nrz)%polozenia(1,1)
+                nj = zrodla(nrz)%polozenia(1,2) + 1
+                mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
+                mj = nj + rozbieg - 1
+                UTOTAL(ni:mi,nj:mj) = 0
+            case (ZRODLO_KIERUNEK_DOL)
+                ni = zrodla(nrz)%polozenia(1,1)
+                nj = zrodla(nrz)%polozenia(1,2) - 1
+                mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
+                mj = nj - rozbieg + 1
+                UTOTAL(ni:mi,nj:mj) = 0
+            endselect
+        enddo
+
+
+
+    end subroutine system_dodaj_lorentza
+
+    ! -------------------------------------------------------------------
+    ! Dodaje prostokatny obszar potencjalu z wygladzonymi za pomoca funkcji Diraca krawedziami.
+    ! Podajemy
+    ! xpos  - polozenie x [nm] paska potencjalu
+    ! ypos1 - poczatek polozenia od dolu ([nm])
+    ! ypos2 - koniec polozenia paska - gora [nm]
+    ! amp   - amplituda w [meV]
+    ! width - szerokosc paska w [nm]
+    ! temp  - stopien rozmycia (posiada interpretacje temperatury z rozkladu Diraca)
+    !         wyzsza temperatura wieksze rozmycie
+    ! -------------------------------------------------------------------
+    subroutine system_dodaj_pionowy_slupek_potencjalu(xpos,ypos1,ypos2,amp,width,temp)
+        doubleprecision , intent(in) :: xpos,ypos1,ypos2,amp,width,temp
+        double precision :: xp,yp,pvalue
+        integer :: i,j
+
+        do i = 1 , nx
+        do j = 1 , ny
+            xp = i * dx * LR2L
+            yp = j * dx * LR2L
+
+            pvalue = system_fermiT(xp,xpos-width/2,temp) + (1 - system_fermiT(xp,xpos+width/2,temp))
+            pvalue = 1 - pvalue
+            pvalue = pvalue * ( system_fermiT(-yp,-ypos1,temp) * system_fermiT(yp,ypos2,temp)   )
+
+            UTOTAL(i,j) = UTOTAL(i,j) + pvalue * amp / Rd / 1000.0;
+        enddo
+        enddo
+    end subroutine system_dodaj_pionowy_slupek_potencjalu
+
+
+    ! -------------------------------------------------------------------
+    ! Oblicza gestosc pradu prawdopodobienstwa na podstawie obecnej f.f.
+    ! -------------------------------------------------------------------
+    subroutine system_oblicz_J()
+          integer          :: i,j
+          complex*16       :: ycy,cx,jx,jy
+
+
+          ! -----------------------------------------------------------------
+          do i = 2 , nx-1
+          do j = 2 , ny-1
+              if(GFLAGS(i,j) == 0) then
+
+                cx  = EXP(+II*DX*DX*(j)*BZ)
+
+                ycy = conjg(cx)*VPHI(GINDEX(i+1,j))-VPHI(GINDEX(i-1,j))*cx
+                jx  = (-1.0/4.0/DX*II)*(conjg(VPHI(GINDEX(i,j)))*ycy - VPHI(GINDEX(i,j))*conjg(ycy))
+                ycy = VPHI(GINDEX(i,j+1))-VPHI(GINDEX(i,j-1))
+                jy  = (-1.0/4.0/DX*II)*(conjg(VPHI(GINDEX(i,j)))*ycy - VPHI(GINDEX(i,j))*conjg(ycy))
+                CURRENT(i,j) = CURRENT(i,j) + sqrt(DBLE(jx*jx + jy*jy))
+              endif
+          enddo
+          enddo
+
+    endsubroutine system_oblicz_J
     ! ------------------------------------------------------------ -------
     ! Funkcja zapisuje do pliku nazwa dane wskazane przez typ (patrz enum)
     ! ------------------------------------------------------------ -------
@@ -621,7 +786,7 @@ module modsystem
         do i = 1 , NX
         do j = 1 , NY
                 fval = UTOTAL(i,j)
-                write(86554,"(3e20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
+                write(86554,"(3f20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
         enddo
             write(86554,*),""
         enddo
@@ -638,7 +803,16 @@ module modsystem
     case(ZAPISZ_PHI)
         do i = 1 , NX
         do j = 1 , NY
-                fval = abs(PHI(i,j))**2
+                fval = abs(PHI(i,j))
+                write(86554,"(3e20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
+        enddo
+            write(86554,*),""
+        enddo
+    ! ---------------------------------------
+    case(ZAPISZ_J)
+        do i = 1 , NX
+        do j = 1 , NY
+                fval = CURRENT(i,j)
                 write(86554,"(3e20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
         enddo
             write(86554,*),""

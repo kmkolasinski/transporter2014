@@ -487,10 +487,18 @@ MODULE modpop
         Mtau  = 0
 
         ! Przygotowanie podmacierzy diagonalnej 1 i macierzy B
-        do i = 1 , N
-            Mdiag(i,i) =     1
-            Mtau (i,i) =  - t0 * exp(II*(DX*DX*BZ*(i-hNY)))
-        enddo
+
+        if(pbHorizontal) then
+            do i = 1 , N
+                Mdiag(i,i) =     1
+                Mtau (i,i) =  - t0 * exp(+II*(DX*DX*BZ*(i-hNY)))
+            enddo
+        else
+            do i = 1 , N
+                Mdiag(i,i) =     1
+                Mtau (i,i) =  - t0 * exp(-II*(DX*DX*BZ*(i-hNY)))
+            enddo
+        endif
         ! Przygotowanei podmacierzy (E-H)
         do i = 1 , N
             Mham(i,i)   = 4*t0 + Uvec(i) - Ef
@@ -658,7 +666,8 @@ MODULE modpop
         LICZBA_MODOW_EVANESCENTYCH = 0
         ! bierzemy tylko te mody ktore nie maja czesci falowej (tj tylko czyste evanescentne exp(+/-kx))
         do i = LICZBA_MODOW + 1 , N
-            if( abs(imag(K_M_OUT(i))) < 1.0E-6 ) then
+            if( abs(imag(K_M_OUT(i))) < 1.0E-6 .and. abs(imag(K_M_IN(i))) < 1.0E-6 .and. &
+             &  abs(dble(K_M_OUT(i))) > 1.0E-6 .and. abs(dble(K_M_IN(i))) > 1.0E-6  ) then
                 LICZBA_MODOW_EVANESCENTYCH = LICZBA_MODOW_EVANESCENTYCH + 1
                 Chi_M_IN (:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_IN(:,i)
                 K_M_IN   (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_IN(i)
