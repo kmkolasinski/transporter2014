@@ -7,6 +7,7 @@ module modsystem
      ! Zmienne systemowe
      ! -----------------------------------------------------------------
     integer :: no_zrodel      ! liczba zrodel w ukladzie
+    integer :: no_abs_zrodel  ! libcza wirtualnych zrodel (w.b. Nowaka)
     integer :: TRANS_MAXN     ! liczba oczek brane do rozwiazania ukladu rownan
     integer :: MATASIZE
     integer :: Nx,Ny          ! wymiar ukladu
@@ -15,7 +16,8 @@ module modsystem
     doubleprecision :: TRANS_T ! prawdopodobienstwo przejscia
 
 
-    type(czrodlo),dimension(:),allocatable        :: zrodla ! TABLICA Z OBIEKTAMI ZRODLA
+    type(czrodlo),dimension(:),allocatable        :: zrodla    ! TABLICA Z OBIEKTAMI ZRODLA
+    type(cabs_zrodlo),dimension(:),allocatable     :: abs_zrodla ! TABLICA Z OBIEKTAMI WIRTUALNYCH W.B.
     integer,dimension(:,:), allocatable           :: GFLAGS ! ZAWIERA FLAGI UKLADU (DIRICHLET,WEJSCIA,POZA)
     integer,dimension(:,:), allocatable           :: ZFLAGS ! ZAWIERA FLAGI WEJSC WARTOSC FLAGI OZNACZA NUMER WEJSCIA - 1,2, ...
     integer,dimension(:,:), allocatable           :: GINDEX ! INDEKSUJE GEOMETRIE UKLADU (-1) OZNACZA POZA UKLADEM
@@ -39,6 +41,7 @@ module modsystem
     public :: ZAPISZ_FLAGI , ZAPISZ_POTENCJAL , ZAPISZ_KONTUR , ZAPISZ_INDEKSY , ZAPISZ_PHI , ZAPISZ_J
     public :: zrodla,UTOTAL,GFLAGS,GINDEX
     public :: system_inicjalizacja , system_zwalnienie_pamieci , system_inicjalizacja_ukladu
+    public :: system_dodaj_abs_zrodlo !(pY1,pYN,pX1,pEf,pKierunek)
     public :: system_zapisz_do_pliku , system_rozwiaz_problem
     public :: system_gauss , system_dodaj_lorentza , system_dodaj_pionowy_slupek_potencjalu
     public :: system_fermi, system_fermiT , system_dfermidE
@@ -88,6 +91,45 @@ module modsystem
         TRANS_MAXN = 0;
     end subroutine system_inicjalizacja
 
+    ! ========================================================================================
+    !               FUNKCJA ALOKUJE NOWE ZRODLO Z
+    !   TRANSPARENTNYMI WARUNKAMI BRZEGOWYMI. ALOKACJA PRZEPRO-
+    ! WADZANA JEST DYNAMICZNIE, DLATEGO NIE TRZEBA PODAWAC INDEKSOW.
+    ! ========================================================================================
+    ! Ustawiamy wczesniej zaalokowane zrodlo przez polecenie systemowe.
+    ! Parametry:
+    ! pY1,pYN - polozenia y na siatce numerycznej liczone od 1 do NY, w przypadku zrodla poziomego
+    !           oznaczaja polozenia X1 oraz XN
+    ! pX1 - polozenie X zrodla, dla zrodla poziomego polozenie Y1
+    ! pEf -Ef [meV]
+    ! pKierunek - enum ZRODLO_KIERUNEK_PRAWO/LEWO/GORA/DOL - ustala w ktora skierowane jest zrodlo
+    ! --------------------------------------------------------------------
+    subroutine system_dodaj_abs_zrodlo(pY1,pYN,pX1,pEf,pKierunek)
+        integer,intent(in)         ::  pY1,pYN,pX1
+        doubleprecision,intent(in) ::  pEf
+        integer,intent(in)         ::  pKierunek ! enum
+        type(cabs_zrodlo),dimension(:),allocatable     :: tmp_abs_zrodla
+        integer :: i
+        no_abs_zrodel = size(abs_zrodla)
+
+
+        allocate(tmp_abs_zrodla(no_abs_zrodel+1))
+        do i = 1 , no_abs_zrodel
+            call tmp_abs_zrodla(i)%abs_zrodlo_skopiuj(abs_zrodla(i))
+            call abs_zrodla(i)%abs_zrodlo_zwolnij_pamiec()
+        enddo
+
+        if(allocated(abs_zrodla)) deallocate(abs_zrodla)
+        allocate(abs_zrodla(no_abs_zrodel+1))
+        do i = 1 , no_abs_zrodel
+            call abs_zrodla(i)%abs_zrodlo_skopiuj(tmp_abs_zrodla(i))
+        enddo
+
+        call abs_zrodla(no_abs_zrodel+1)%abs_zrodlo_ustaw(pY1,pYN,pX1,pEf,pKierunek)
+        no_abs_zrodel = no_abs_zrodel + 1
+    end subroutine system_dodaj_abs_zrodlo
+
+
 
     ! =========================================================
     !
@@ -99,16 +141,23 @@ module modsystem
     subroutine system_zwalnienie_pamieci()
         integer :: i
         if(TRANS_DEBUG==.true.) print*,"System: Zwalnianie pamieci"
+        print*,"    Czyszczenie tablic..."
         if(allocated(GFLAGS))   deallocate(GFLAGS)
         if(allocated(ZFLAGS))   deallocate(ZFLAGS)
         if(allocated(GINDEX))   deallocate(GINDEX)
         if(allocated(UTOTAL))   deallocate(UTOTAL)
         if(allocated(CURRENT))  deallocate(CURRENT)
         if(allocated(PHI))      deallocate(PHI)
+        print*,"    Czyszczenie zrodel..."
         do i = 1 , no_zrodel
             call zrodla(i)%zrodlo_zwolnij_pamiec()
         enddo
-        if(allocated(zrodla)) deallocate(zrodla)
+        print*,"    Czyszczenie abs_zrodel..."
+        do i = 1 , no_abs_zrodel
+            call abs_zrodla(i)%abs_zrodlo_zwolnij_pamiec()
+        enddo
+        if(allocated(zrodla))    deallocate(zrodla)
+        if(allocated(abs_zrodla)) deallocate(abs_zrodla)
     end subroutine system_zwalnienie_pamieci
 
     ! ------------------------------------------------------------
@@ -141,36 +190,41 @@ module modsystem
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni + in_len - 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-!                if(nj==1) nj = 2
-!                if(mj==NY)mj = NY-1
+
                 GFLAGS(ni:mi,nj:mj) = B_NORMAL
             case (ZRODLO_KIERUNEK_LEWO)
                 ni = zrodla(nrz)%polozenia(1,1) - 1
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni - in_len + 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-!                if(nj==1) nj = 2
-!                if(mj==NY)mj = NY-1
+
                 GFLAGS(mi:ni,nj:mj) = B_NORMAL
             case (ZRODLO_KIERUNEK_GORA)
                 ni = zrodla(nrz)%polozenia(1,1)
                 nj = zrodla(nrz)%polozenia(1,2) + 1
                 mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
                 mj = nj + in_len - 1
-!                if(nj==1) nj = 2
-!                if(mj==NY)mj = NY-1
+
                 GFLAGS(ni:mi,nj:mj) = B_NORMAL
             case (ZRODLO_KIERUNEK_DOL)
                 ni = zrodla(nrz)%polozenia(1,1)
                 nj = zrodla(nrz)%polozenia(1,2) - 1
                 mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
                 mj = nj - in_len + 1
-!                if(nj==1) nj = 2
-!                if(mj==NY)mj = NY-1
+
                 GFLAGS(ni:mi,mj:nj) = B_NORMAL
             endselect
 
 
+        enddo
+        ! przypisywanie  transparentnych w.b.
+        do nrz = 1 , no_abs_zrodel
+            do i = 2 , abs_zrodla(nrz)%N - 1
+                ni = abs_zrodla(nrz)%polozenia(i,1)
+                nj = abs_zrodla(nrz)%polozenia(i,2)
+                GFLAGS(ni,nj) = B_TRANSPARENT
+                ZFLAGS(ni,nj) = nrz ! przypisujemy fladze numer wejscia
+            enddo
         enddo
 
         ! -------------------------------------------------------------
@@ -222,7 +276,10 @@ module modsystem
         iter   = 1
         do i = 1 , nx
         do j = 1 , ny
-           if( GFLAGS(i,j) == B_WEJSCIE .or. GFLAGS(i,j) == B_NORMAL .or. GFLAGS(i,j) == B_DIRICHLET  ) then
+           if( GFLAGS(i,j)  == B_WEJSCIE      .or. &
+              & GFLAGS(i,j) == B_NORMAL       .or. &
+              & GFLAGS(i,j) == B_TRANSPARENT  .or. &
+              & GFLAGS(i,j) == B_DIRICHLET  ) then
            GINDEX(i,j) = iter
            iter = iter + 1
            endif
@@ -330,10 +387,13 @@ module modsystem
         do j = 1 , Ny
             select case(GFLAGS(i,j))
             case(B_DIRICHLET)
-                    MATASIZE = MATASIZE + 1
+                    MATASIZE   = MATASIZE + 1
                     TRANS_MAXN = TRANS_MAXN + 1
             case(B_WEJSCIE)
-                    MATASIZE = MATASIZE + zrodla(ZFLAGS(i,j))%N + 1 - 2 ! +1 na relacje prawo/lewo/gora/dol -2 na obciecie indeksow (1 i N)
+                    MATASIZE   = MATASIZE + zrodla(ZFLAGS(i,j))%N + 1 - 2 ! +1 na relacje prawo/lewo/gora/dol -2 na obciecie indeksow (1 i N)
+                    TRANS_MAXN = TRANS_MAXN + 1
+            case(B_TRANSPARENT)
+                    MATASIZE   = MATASIZE + 2 ! na transparentne w.b. potrzebujemy dwie komurki
                     TRANS_MAXN = TRANS_MAXN + 1
             case(B_NORMAL)
                     MATASIZE = MATASIZE + 5
@@ -361,6 +421,7 @@ module modsystem
         ! zmienne pomocniczne
         integer          :: i,j,itmp,ni,nj,pnj,nn,ln,nzrd,pni
         complex*16       :: post
+        doubleprecision  :: kvec
         itmp  = 1
         do i = 1, nx
         do j = 1, ny
@@ -554,7 +615,40 @@ module modsystem
                     enddo
                     endselect
 
-                endif ! end of if WEJSCIE
+                ! ----------------------------------------------------------------------- !
+                ! endif ! end of if WEJSCIE, transparentne warunki brzegowe
+                ! ----------------------------------------------------------------------- !
+                else if( GFLAGS(i,j) == B_TRANSPARENT) then
+
+                    nzrd = ZFLAGS(i,j)
+                    kvec = abs_zrodla(nzrd)%kvec
+                    ni   = i
+                    nj   = j ! globalne polozenia na siatce
+
+                    cmatA(itmp)   = 1
+                    idxA (itmp,1) = GINDEX(i, j)
+                    idxA (itmp,2) = GINDEX(i, j)
+                    itmp = itmp + 1
+
+                    cmatA(itmp)   =-EXP(II*KVEC*DX)
+                    idxA (itmp,1) = GINDEX(i, j)
+                    select case (abs_zrodla(nzrd)%bKierunek)
+                    ! ------------------------>
+                    case (ZRODLO_KIERUNEK_PRAWO)
+                        idxA (itmp,2) = GINDEX(i+1,j)
+                    !<------------------------
+                    case (ZRODLO_KIERUNEK_LEWO)
+                        idxA (itmp,2) = GINDEX(i-1,j)
+                    ! ------------------------>
+                    case (ZRODLO_KIERUNEK_GORA)
+                        idxA (itmp,2) = GINDEX(i, j+1)
+                    ! <------------------------
+                    case (ZRODLO_KIERUNEK_DOL)
+                        idxA (itmp,2) = GINDEX(i, j-1)
+                    endselect
+                    itmp = itmp + 1
+
+                    endif ! rodzaj komorki - ostatni else B_TRANSPARENT
             endif ! end if GINDEX > 0
         enddo ! end of j
         enddo ! end of i

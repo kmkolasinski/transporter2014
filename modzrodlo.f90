@@ -14,6 +14,7 @@ implicit none
     ! =========================================================
     ! przechowuje informacje o zrodle
     type czrodlo
+
         integer :: N ! liczba oczek siatki
         integer :: bKierunek      ! ustala zwrot zrodla, 1 - w kierunku dodatnich wartosci x lub y, 0 - przeciwnie
         double precision :: hnY , hnX   ! wysokosc zrodla w oczkach siatki, moze byc polowkowa
@@ -57,6 +58,23 @@ implicit none
         procedure, public, pass(zrodlo) :: zrodlo_oblicz_JinJout!(zrodlo,dx)
 
     end type czrodlo
+
+    ! =========================================================
+    !                   Klasa abszrodlo
+    ! wykorzystywana jest to symulacji transparentnych w.b zaproponowanych
+    ! przez nowaka
+    ! =========================================================
+    type cabs_zrodlo
+        integer :: N ! liczba oczek siatki
+        integer :: bKierunek      ! ustala zwrot zrodla, 1 - w kierunku dodatnich wartosci x lub y, 0 - przeciwnie
+        integer,dimension(:,:),allocatable :: polozenia; ! wekor polozen (n,1) ,(n,2) na siatce numerycznej mapowanie na indeks
+        doubleprecision :: kvec ! wirtualny wektor falowy
+        contains
+        procedure, public, pass(zrodlo) :: abs_zrodlo_zwolnij_pamiec
+        procedure, public, pass(zrodlo) :: abs_zrodlo_ustaw
+        procedure, public, pass(zrodlo) :: abs_zrodlo_skopiuj!(zrodlo,od_zrodla)
+    end type cabs_zrodlo
+
 
 contains
 
@@ -410,6 +428,9 @@ contains
             end do
             ! ---------------------------------------------------------------- !
         case (ZRODLO_KIERUNEK_GORA)
+
+
+
             ! Wzynaczanie wektora pomocniczego
             zrodlo%deltamk(:) = 0 ! dajemy zero bo nie bedzie uzywane, bo tutaj cechowanie zalezy jeszcze od x
 
@@ -442,14 +463,17 @@ contains
                 zrodlo%Sij(i,j) = 0
                 do k = 1 , zrodlo%N
                     if( j <= lModow) then
-                    ctmp = exp( (zrodlo%polozenia(k,2))*DX*(&
-                            &-II*zrodlo%k_m_in(j) +&
+                    ctmp = exp( (zrodlo%polozenia(k,2))*DX*(-II*zrodlo%k_m_in(j) +&
                             &II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+
                     else
                     ctmp = exp( zrodlo%polozenia(k,2)*DX*(&
                             &-zrodlo%k_m_in(j) +&
                             &II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
                     endif
+
+!                    ctmp = 1
+
                     zrodlo%Sij(i,j) = zrodlo%Sij(i,j) + ctmp*( conjg(zrodlo%Chi_m_out(k,i))*zrodlo%Chi_m_out(k,j) )*DX
                 enddo
 
@@ -462,7 +486,7 @@ contains
             ! Wyznaczanie macierzy pomocniczej zawierajacej iloczyny macierzy Sij i wektora Chi
             do i = 1 , ntmp
             do j = 1 , N
-                zrodlo%SijChiAuxMat(i,j) = sum( zrodlo%Sij(i,:)*conjg(zrodlo%Chi_m_out(j,:)) )
+                zrodlo%SijChiAuxMat(i,j) = sum( zrodlo%Sij(i,:) * conjg(zrodlo%Chi_m_out(j,:)) )
             end do
             end do
 
@@ -499,15 +523,26 @@ contains
             do j = 1 , ntmp
                 zrodlo%Sij(i,j) = 0
                 do k = 1 , zrodlo%N
+!                    if( j <= lModow) then
+!                    ctmp = exp( (zrodlo%polozenia(k,2))*DX*( &
+!                            &+II*zrodlo%k_m_in(j) + &
+!                            & II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+!                    else
+!                    ctmp = exp( (zrodlo%polozenia(k,2))*DX*( &
+!                            & zrodlo%k_m_out(j) + &
+!                            & II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+!                    endif
+
                     if( j <= lModow) then
-                    ctmp = exp( (zrodlo%polozenia(k,2))*DX*( &
-                            &+II*zrodlo%k_m_in(j) + &
-                            & II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+                    ctmp = exp( (zrodlo%polozenia(k,2))*DX*(II*zrodlo%k_m_in(j) +&
+                            &II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+
                     else
-                    ctmp = exp( (zrodlo%polozenia(k,2))*DX*( &
-                            & zrodlo%k_m_out(j) + &
-                            & II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
+                    ctmp = exp( zrodlo%polozenia(k,2)*DX*(&
+                            &-zrodlo%k_m_in(j) +&
+                            &II*Bz*( zrodlo%polozenia(k,1)*DX - zrodlo%hnX ) ) )
                     endif
+
 
                     zrodlo%Sij(i,j) = zrodlo%Sij(i,j) + ctmp*( conjg(zrodlo%Chi_m_in(k,i))*zrodlo%Chi_m_in(k,j) )*DX
 
@@ -522,15 +557,11 @@ contains
             ! Wyznaczanie macierzy pomocniczej zawierajacej iloczyny macierzy Sij i wektora Chi
             do i = 1 , ntmp
             do j = 1 , N
-                zrodlo%SijChiAuxMat(i,j) = sum( zrodlo%Sij(i,:)*conjg(zrodlo%Chi_m_in(j,:)) )
-!                zrodlo%SijChiAuxMat(i,j)  = 0
-!
-!                do l = 1 , ntmp
-!                    zrodlo%SijChiAuxMat(i,j) =  zrodlo%SijChiAuxMat(i,j)  +  zrodlo%Sij(i,l)*conjg(zrodlo%Chi_m_in(j,l)) * &
-!                    & exp( (zrodlo%polozenia(j,2)*dx)*(-II*zrodlo%k_m_in(l) - II*Bz*( zrodlo%polozenia(j,1) * dx  - zrodlo%hnx )) )
-!                enddo
+                zrodlo%SijChiAuxMat(i,j) = sum( zrodlo%Sij(i,:) * conjg(zrodlo%Chi_m_in(j,:)) )
             end do
             end do
+
+
         case default
             print*,"Modzrodlo:: Nie ma takiego typu zrodla jak",zrodlo%bKierunek
             stop
@@ -718,6 +749,9 @@ contains
                 else
                     deltamk = exp( (ypos + DX)*(-zrodlo%k_m_in(k) + II*bpart)  )   - exp( (ypos-DX)*( -zrodlo%k_m_in(k) + II*bpart) )
                 endif
+
+!                deltamk = exp( (DX)*(-II*zrodlo%k_m_in(k)) ) - exp(  (-DX)*(-II*zrodlo%k_m_in(k) ) )
+
                 Xkn = Xkn + deltamk*zrodlo%Chi_m_out(v,k) * zrodlo%SijChiAuxMat(k,i);
 
             enddo
@@ -737,10 +771,10 @@ contains
                 if( k <= zrodlo%liczba_modow) then
                     deltamk = exp( (ypos + DX)*(II*zrodlo%k_m_in(k) + II*bpart) ) - exp(  (ypos-DX)*(II*zrodlo%k_m_in(k) + II*bpart) )
                 else
-                    deltamk = exp( (ypos + DX)*(zrodlo%k_m_in(k) + II*bpart)  ) - exp( (ypos-DX)*( zrodlo%k_m_in(k) + II*bpart) )
-
+                    deltamk = exp( (ypos + DX)*(zrodlo%k_m_in(k) + II*bpart)  )   - exp( (ypos-DX)*( zrodlo%k_m_in(k) + II*bpart) )
                 endif
-                Xkn = Xkn + deltamk * zrodlo%Chi_m_in(v,k) * zrodlo%SijChiAuxMat(k,i);
+
+                Xkn = Xkn + deltamk*zrodlo%Chi_m_in(v,k) * zrodlo%SijChiAuxMat(k,i);
             enddo
 
         endselect
@@ -848,6 +882,83 @@ contains
 
     end subroutine
 
+! ---------------------------------------------------------------------------------------------
+!
+!   Funkcje klasy abszrodla
+!
+! ---------------------------------------------------------------------------------------------
+    subroutine abs_zrodlo_zwolnij_pamiec(zrodlo)
+        class(cabs_zrodlo) :: zrodlo
 
+        if(TRANS_DEBUG==.true.) print*,"Abszrodlo: Zwalanianie pamieci"
+        if(allocated(zrodlo%polozenia)) deallocate(zrodlo%polozenia);
+
+
+    end subroutine abs_zrodlo_zwolnij_pamiec
+
+
+! --------------------------------------------------------------------------------- !
+! Podobnie jak to jest dla normalnej klasy zrodlo. Potrzebna jest tylko informacja
+! o energii fermiego
+! --------------------------------------------------------------------------------- !
+
+    subroutine abs_zrodlo_ustaw(zrodlo,pY1,pYN,pX1,pEf,pKierunek)
+        class(cabs_zrodlo)             ::  zrodlo
+        integer,intent(in)         ::  pY1,pYN,pX1
+        doubleprecision,intent(in) ::  pEf
+        integer,intent(in)         ::  pKierunek ! enum
+
+        double precision :: Ef
+        integer :: N,i
+
+        print*,"Dodawanie zrodla z transparentnymi w.b"
+
+        Ef  = pEf/1000.0/Rd
+
+        N = pYN - pY1 + 1; ! to jest tak samo liczone ale zmienne pYN , pY1 maja inna interpretacje
+        zrodlo%kvec = sqrt(2*Ef)
+        zrodlo%N    = N
+
+        if(allocated(zrodlo%polozenia)) deallocate(zrodlo%polozenia)
+
+        allocate(zrodlo%polozenia(N,2))
+        zrodlo%polozenia = 0
+        ! ustawianie parametrow zrodel
+        zrodlo%bKierunek = pKierunek
+
+        if( pKierunek == ZRODLO_KIERUNEK_PRAWO .or. pKierunek == ZRODLO_KIERUNEK_LEWO ) then
+            zrodlo%polozenia(:,1) = pX1
+            do i = 1 , N
+                zrodlo%polozenia(i,2) = pY1 + i - 1
+            enddo
+        else ! dla zrodel gora dol
+            zrodlo%polozenia(:,2) = pX1
+            do i = 1 , N
+                zrodlo%polozenia(i,1) = pY1 + i - 1
+            enddo
+        endif
+
+        print*,"kvec      = " , zrodlo%kvec * L2LR , "[nm]"
+        print*,"kierunek  ="  , zrodlo%bKierunek
+        print*,"N         ="  , zrodlo%N
+
+
+    end subroutine abs_zrodlo_ustaw
+
+! --------------------------------------------------------------------------------- !
+! Kopuje dane z jednego zrodla do drugiego
+! --------------------------------------------------------------------------------- !
+
+    subroutine abs_zrodlo_skopiuj(zrodlo,od_zrodla)
+        class(cabs_zrodlo)       ::  zrodlo,od_zrodla
+
+        zrodlo%bKierunek = od_zrodla%bKierunek
+        zrodlo%kvec      = od_zrodla%kvec
+        zrodlo%N         = od_zrodla%N
+        if(allocated(zrodlo%polozenia)) deallocate(zrodlo%polozenia)
+        allocate(zrodlo%polozenia(zrodlo%N,2))
+
+        zrodlo%polozenia = od_zrodla%polozenia
+    end subroutine abs_zrodlo_skopiuj
 
 endmodule modzrodlo

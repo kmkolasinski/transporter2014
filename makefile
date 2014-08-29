@@ -15,7 +15,9 @@ BASEDIR=/home/mkk/libs
 FCFLAGS= -c -O3  -132  -I$(BASEDIR)/SuperLU_4.3/SRC
 FCCFLAGS= -c -O3 -I$(BASEDIR)/SuperLU_4.3/SRC
 FBFLAGS=  -O3  -132
-LIBS=  $(BASEDIR)/lapack-3.4.2/liblapack.a  $(BASEDIR)/SuperLU_4.3/lib/libsuperlu_4.3.a  $(BASEDIR)/BLAS/blas_IFORT.a  -lm
+FLFLAGS= -L/opt/intel/mkl/lib/intel64/ -L/opt/intel/composer_xe_2013_sp1.1.106/mkl/lib/intel64/
+LIBS= $(BASEDIR)/lapack-3.4.2/liblapack.a  $(BASEDIR)/SuperLU_4.3/lib/libsuperlu_4.3.a  $(BASEDIR)/BLAS/blas_IFORT.a
+
 else ifeq ($(C),ifortDEBUG)
 FC=ifort
 BASEDIR=/home/mkk/libs
@@ -29,7 +31,7 @@ FC=ifort
 FCFLAGS= -c -O3  -132  -I$(BASEDIR)/SuperLU_4.3/SRC
 FCCFLAGS= -c -O3  -I$(BASEDIR)/SuperLU_4.3/SRC
 FBFLAGS=  -O3  -132
-LIBS=  $(BASEDIR)/lapack-3.4.2/liblapack.a  $(BASEDIR)/SuperLU_4.3/lib/libsuperlu_4.3.a  $(BASEDIR)/BLAS/blas_IFORT.a  -lm
+LIBS= -mkl $(BASEDIR)/libsuperlu_4.3.a
 endif
 
 
