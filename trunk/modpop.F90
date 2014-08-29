@@ -465,6 +465,7 @@ MODULE modpop
         hny   = (N+1)/2.0!
 
 
+
         ! alokacja tablic
         if(.not. allocated(Uvec)) allocate(Uvec(N))
 
@@ -586,12 +587,15 @@ MODULE modpop
         print*,""
         print*,"WEKTORY FALOWE (IN/OUT):"
 
+
+
         num_in  = 0
         num_out = 0
         do i = 1 , 2*N
             if(abs(Beta(i))>1e-16) then
                 lambda = (ALPHA(i)/BETA(i))
-                if(  abs(abs(lambda) - 1.0) < 1.0E-6 ) then
+
+                if(  abs(abs(lambda) - 1.0) < 1.0E-8 ) then
                     kvec  = (log(lambda)/II/DX)
                     if(dble(kvec) > 0) then
                         num_in                   = num_in + 1
@@ -628,10 +632,11 @@ MODULE modpop
         print*,""
         print*,"WEKTORY EVANESCENTNE (IN/OUT):"
 
-        do i = N , 1 , -1
+        do i = 2*N , 1 , -1
             if(abs(Beta(i))>1e-16) then
                 lambda= (ALPHA(i)/BETA(i))
                 kvec  = (log(lambda)/DX)
+!                print*,i,kvec*L2LR
                 if( abs(lambda) > 1 + 1E-6 ) then
 
                     num_out                  = num_out + 1
@@ -643,10 +648,11 @@ MODULE modpop
             endif ! end of if beta
         enddo
 
-        do i = N , 2*N
+        do i = 1 , 2*N
             if(abs(Beta(i))>1e-16) then
                 lambda= (ALPHA(i)/BETA(i))
                 kvec  = (log(lambda)/DX)
+!                print*,i,kvec*L2LR
                 if(  abs(lambda) < 1 - 1E-6 ) then
 
                     num_in                   = num_in + 1
@@ -654,8 +660,6 @@ MODULE modpop
                     Chi_M_IN(2:N+1,num_in)   = Z(N+1:2*N,i)
                     YcY                      = sum(abs(Chi_M_IN(:,num_in))**2)*DX
                     Chi_M_IN(:,num_in)       = Chi_M_IN(:,num_in)/sqrt(YcY)
-
-
                 endif
             endif ! end of if beta
         enddo

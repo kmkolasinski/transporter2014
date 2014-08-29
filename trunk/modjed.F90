@@ -26,6 +26,7 @@ MODULE modjed
         ENUMERATOR :: B_NORMAL          = 0 ! FLAGA OZNACZA ZE TO NIE JEST BRZEG
         ENUMERATOR :: B_DIRICHLET       = 2
         ENUMERATOR :: B_WEJSCIE         = 16
+        ENUMERATOR :: B_TRANSPARENT     = 32
         ENUMERATOR :: B_EMPTY           = -1
     END ENUM
 
