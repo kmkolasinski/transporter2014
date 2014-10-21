@@ -25,8 +25,9 @@ module modsystem
     complex*16,dimension(:),allocatable           :: CMATA  ! GLOWNA MACIERZ PROGRAMU W FORMACIE (ROW,COL,VALS), TUTAJ TYLKO VALS
     integer,dimension(:,:),allocatable            :: IDXA   ! INDEKSY MACIERZY (ROW,COL)
     complex*16,dimension(:),allocatable           :: VPHI   ! SZUKANA FUNKCJA FALOWA, PRZELICZANA POTEM NA LDOS
-    complex*16,dimension(:,:),allocatable         ::  PHI   ! FUNKCJA FALOWA ZAPISANA NA DWUWYMIAROWEJ MACIERZY
-    double precision,dimension(:,:), allocatable  :: CURRENT! FUNKCJA GESTOSCI PRADU PRAWDOPODOBIENSTWA
+    complex*16,dimension(:,:),allocatable         :: PHI   ! FUNKCJA FALOWA ZAPISANA NA DWUWYMIAROWEJ MACIERZY
+    double precision,dimension(:,:), allocatable  :: CURRENT,CURRENTX,CURRENTY! FUNKCJA GESTOSCI PRADU PRAWDOPODOBIENSTWA
+    complex*16,dimension(:,:,:),allocatable       :: WAVEFUNC  ! FUNKCJA FALOWA ZAPISANA NA DWUWYMIAROWEJ MACIERZY, TRZECIA KOLUMNA TO N-TY MOD
 
     ! rodzaje zapisu do pliku
     ENUM,BIND(C)
@@ -36,10 +37,11 @@ module modsystem
         ENUMERATOR :: ZAPISZ_INDEKSY    = 3
         ENUMERATOR :: ZAPISZ_PHI        = 4
         ENUMERATOR :: ZAPISZ_J          = 5
+        ENUMERATOR :: ZAPISZ_WAVEFUNC   = 6
     END ENUM
 
-    public :: ZAPISZ_FLAGI , ZAPISZ_POTENCJAL , ZAPISZ_KONTUR , ZAPISZ_INDEKSY , ZAPISZ_PHI , ZAPISZ_J
-    public :: zrodla,UTOTAL,GFLAGS,GINDEX
+    public :: ZAPISZ_FLAGI , ZAPISZ_POTENCJAL , ZAPISZ_KONTUR , ZAPISZ_INDEKSY , ZAPISZ_PHI , ZAPISZ_J , ZAPISZ_WAVEFUNC
+    public :: zrodla,UTOTAL,GFLAGS,GINDEX,PHI
     public :: system_inicjalizacja , system_zwalnienie_pamieci , system_inicjalizacja_ukladu
     public :: system_dodaj_abs_zrodlo !(pY1,pYN,pX1,pEf,pKierunek)
     public :: system_zapisz_do_pliku , system_rozwiaz_problem
@@ -79,6 +81,8 @@ module modsystem
         allocate( UTOTAL(nx,ny))
         allocate(    PHI(nx,ny))
         allocate(CURRENT(nx,ny))
+        allocate(CURRENTX(nx,ny))
+        allocate(CURRENTY(nx,ny))
         GFLAGS = B_NORMAL
         ZFLAGS = 0
         GINDEX = 0
@@ -147,7 +151,10 @@ module modsystem
         if(allocated(GINDEX))   deallocate(GINDEX)
         if(allocated(UTOTAL))   deallocate(UTOTAL)
         if(allocated(CURRENT))  deallocate(CURRENT)
+        if(allocated(CURRENTX))  deallocate(CURRENTX)
+        if(allocated(CURRENTY))  deallocate(CURRENTY)
         if(allocated(PHI))      deallocate(PHI)
+        if( allocated(WAVEFUNC) ) deallocate(WAVEFUNC)
         print*,"    Czyszczenie zrodel..."
         do i = 1 , no_zrodel
             call zrodla(i)%zrodlo_zwolnij_pamiec()
@@ -314,6 +321,8 @@ module modsystem
         allocate(IDXA (MATASIZE,2))
         allocate(VPHI(TRANS_MAXN))
         allocate(HBROWS(TRANS_MAXN+1))
+        if( allocated(WAVEFUNC) ) deallocate(WAVEFUNC)
+        allocate(WAVEFUNC(nx,ny,zrodla(nrz)%liczba_modow))
 
         ! tablice z wspolczynnikami T i R
         if(allocated(TR_MAT))deallocate(TR_MAT)
@@ -322,6 +331,8 @@ module modsystem
         TR_MAT = 0
 
         CURRENT = 0;
+        CURRENTX = 0;
+        CURRENTY = 0;
         PHI     = 0
 
         TRANS_R = 0
@@ -346,6 +357,7 @@ module modsystem
             enddo
 
 
+
             call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI)
             call oblicz_TR(nrz,mod_in)
             call system_oblicz_J()
@@ -354,10 +366,12 @@ module modsystem
                 TR_MAT(i,mod_in) = sum(abs(zrodla(i)%Jout(:)) )
             enddo
 
-
+            WAVEFUNC(:,:,mod_in) = 0
             do i = 1 , Nx
             do j = 1 , Ny
                 if(GINDEX(i,j) > 0) PHI(i,j) = PHI(i,j) + abs( VPHI(GINDEX(i,j)) )**2
+
+                if(GINDEX(i,j) > 0) WAVEFUNC(i,j,mod_in) = VPHI(GINDEX(i,j))
             enddo
             enddo
 
@@ -839,6 +853,8 @@ module modsystem
                 ycy = VPHI(GINDEX(i,j+1))-VPHI(GINDEX(i,j-1))
                 jy  = (-1.0/4.0/DX*II)*(conjg(VPHI(GINDEX(i,j)))*ycy - VPHI(GINDEX(i,j))*conjg(ycy))
                 CURRENT(i,j) = CURRENT(i,j) + sqrt(DBLE(jx*jx + jy*jy))
+                CURRENTX(i,j) = CURRENTX(i,j) + jx
+                CURRENTY(i,j) = CURRENTY(i,j) + jy
               endif
           enddo
           enddo
@@ -847,19 +863,30 @@ module modsystem
     ! ------------------------------------------------------------ -------
     ! Funkcja zapisuje do pliku nazwa dane wskazane przez typ (patrz enum)
     ! ------------------------------------------------------------ -------
-    subroutine system_zapisz_do_pliku(nazwa,typ)
+    subroutine system_zapisz_do_pliku(nazwa,typ,xstart,xstop,ystart,ystop)
     character(*) , intent(in) :: nazwa
     integer                   :: typ
+    integer,optional,intent(in)::xstart,xstop,ystart,ystop
 
     double precision :: fval
-    integer          :: i,j
+    integer          :: i,j,x1,x2,y1,y2
+
+    x1 = 1
+    x2 = Nx
+    y1 = 1
+    y2 = Ny
+    if(present(xstart)) x1 = xstart
+    if(present(xstop))  x2 = xstop
+    if(present(ystart)) y1 = ystart
+    if(present(ystop))  y2 = ystop
+
 
     open(unit=86554,file=nazwa)
     select case(typ)
     ! ---------------------------------------
     case(ZAPISZ_KONTUR)
-        do i = 1 , NX
-        do j = 1 , NY
+        do i = x1 , x2
+        do j = y1 , y2
                 fval = 0;
                 if(GINDEX(i,j) > 0) fval = 1
                 write(86554,"(3e20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
@@ -868,8 +895,8 @@ module modsystem
         enddo
     ! ---------------------------------------
     case(ZAPISZ_FLAGI)
-        do i = 1 , NX
-        do j = 1 , NY
+        do i = x1 , x2
+        do j = y1 , y2
                 fval = GFLAGS(i,j)
                 write(86554,"(3e20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
         enddo
@@ -877,17 +904,17 @@ module modsystem
         enddo
     ! ---------------------------------------
     case(ZAPISZ_POTENCJAL)
-        do i = 1 , NX
-        do j = 1 , NY
-                fval = UTOTAL(i,j)
+        do i = x1 , x2
+        do j = y1 , y2
+                fval = UTOTAL(i,j)*Rd*1000.0
                 write(86554,"(3f20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
         enddo
             write(86554,*),""
         enddo
     ! ---------------------------------------
     case(ZAPISZ_INDEKSY)
-        do i = 1 , NX
-        do j = 1 , NY
+        do i = x1 , x2
+        do j = y1 , y2
                 fval = GINDEX(i,j)
                 write(86554,"(3e20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
         enddo
@@ -895,8 +922,8 @@ module modsystem
         enddo
     ! ---------------------------------------
     case(ZAPISZ_PHI)
-        do i = 1 , NX
-        do j = 1 , NY
+        do i = x1 , x2
+        do j = y1 , y2
                 fval = abs(PHI(i,j))
                 write(86554,"(3e20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
         enddo
@@ -904,10 +931,17 @@ module modsystem
         enddo
     ! ---------------------------------------
     case(ZAPISZ_J)
-        do i = 1 , NX
-        do j = 1 , NY
+        do i = x1 , x2
+        do j = y1 , y2
                 fval = CURRENT(i,j)
-                write(86554,"(3e20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
+                write(86554,"(5e20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval,CURRENTX(i,j),CURRENTY(i,j)
+        enddo
+            write(86554,*),""
+        enddo    ! ---------------------------------------
+    case(ZAPISZ_WAVEFUNC)
+        do i = x1 , x2
+        do j = y1 , y2
+                write(86554,"(300e20.6)"),i*DX*Lr2L,j*DX*Lr2L,WAVEFUNC(i,j,:)
         enddo
             write(86554,*),""
         enddo
@@ -996,3 +1030,4 @@ module modsystem
       endsubroutine solve_system
 
 end module
+
