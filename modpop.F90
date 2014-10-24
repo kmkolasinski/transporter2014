@@ -446,7 +446,7 @@ MODULE modpop
 
         ! zmienne pomocnicze
         complex*16, allocatable , dimension(:,:) :: Mdiag,Mham,MB,MA , Mtau
-        integer :: i,j,num_in,num_out
+        integer :: i,num_in,num_out
 
         INTEGER                                      :: LDVL, LDVR , LWMAX , LWORK , INFO
         COMPLEX*16 , dimension(:) ,     allocatable  :: ALPHA , BETA , WORK
