@@ -31,7 +31,7 @@ module modsystem
 
     ! Problem wlasny
     integer                                       :: Widmo_NoStates
-    complex*16,dimension(:), allocatable          :: Widmo_Evals
+    double precision,dimension(:), allocatable          :: Widmo_Evals
     complex*16,dimension(:,:) ,allocatable        :: Widmo_Vecs
 
     ! rodzaje zapisu do pliku
@@ -1020,7 +1020,7 @@ module modsystem
     ! ---------------------------------------
     case(ZAPISZ_WIDMO_VRTCAL)
         do i = s1 , s2
-            write(86554,*),DBLE(Widmo_Evals(i))
+            write(86554,*),Widmo_Evals(i)*1000.0*Rd
         enddo
     case(ZAPISZ_WIDMO_HRZNTL)
         write(86554,"(3000e20.6)"),DBLE(Widmo_Evals(s1:s2))
@@ -1070,11 +1070,12 @@ module modsystem
         integer :: i,j,info,itmp,nw,M0,loop,no_evals,iter
         integer :: liczba_konturow,wypisz_informacje,maks_iter
         doubleprecision :: epsout
-        doubleprecision :: Emin, Emax
+        doubleprecision :: Emin, Emax , Ecurr
+
 
         integer,allocatable                    :: HBROWS(:)
         complex*16,dimension(:,:), allocatable :: EVectors
-        complex*16,dimension(:), allocatable   :: Evalues,Rerrors
+        double precision,dimension(:), allocatable   :: Evalues,Rerrors
         integer,dimension(:,:),allocatable     :: WINDEX
         call reset_clock()
         ! Przejscie do jednostek donorowych
@@ -1108,7 +1109,7 @@ module modsystem
             wypisz_informacje = pwypisz_informacje
         endif
         if(.not. present(pmaks_iter)) then
-            maks_iter = 0
+            maks_iter = 20
         else
             maks_iter = pmaks_iter
         endif
@@ -1225,6 +1226,7 @@ module modsystem
             print*,"--------------------------------------------------"
         endif
 
+        Widmo_NoStates = no_evals
 
         ! ----------------------------------------------------------------------------------
         ! Obsluga bledow:
@@ -1241,25 +1243,25 @@ module modsystem
             stop
         case(100:199)
             print"(A,I4,A)"," Error : Problem with ",info-100,"-th value of the input Extended Eigensolver parameter (fpm(i)). Only the parameters in use are checked. "
-            no_evals = 0
+            Widmo_NoStates = 0
             stop
         case( 4 )
             print*," Warning : Successful return of only the computed subspace after call withfpm(14) = 1 "
-            no_evals = 0
+            Widmo_NoStates = 0
 
         case( 3 )
             print*," Warning : Size of the subspace m0 is too small (m0<m) "
-            no_evals = 0
+            Widmo_NoStates = 0
 
         case( 2 )
             print*," Warning : No Convergence (number of iteration loops >fpm(4))"
-            no_evals = 0
+            Widmo_NoStates = 0
         case( 1 )
             print*," Warning : No eigenvalue found in the search interval. See remark below for further details. "
-            no_evals = 0
+            Widmo_NoStates = 0
         case( 0 )
             print*,               "---------------------------------------------"
-            print"(A,i12)",       "Widmo: Znaleziono stanow :",no_evals
+            print"(A,i12)",       "Widmo: Znaleziono stanow :",Widmo_NoStates
             print"(A,f12.3)",     "       W czasie T [s]    :",get_clock()
             print"(A,e12.4)",     "       Z bledem epsout   :",epsout
             print"(A,i12)",       "       W po liczbie iter.:",loop
@@ -1281,12 +1283,14 @@ module modsystem
         ! -----------------------------------------------------------------
         ! Kopiowanie wynikow do odpowiednich tablic
         ! -----------------------------------------------------------------
+
+
         if(allocated(Widmo_Evals)) deallocate(Widmo_Evals)
         if(allocated(Widmo_Vecs))  deallocate(Widmo_Vecs)
 
 
 
-        Widmo_NoStates = no_evals
+!        Widmo_NoStates = no_evals
         if(Widmo_NoStates > 0 ) then
             call oblicz_rozmiar_macierzy();
 

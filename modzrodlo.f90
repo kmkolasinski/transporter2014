@@ -308,12 +308,14 @@ contains
         print*,"Liczba modow evan=",lModowEvan
 !        lModowEvan = 0
 
-
         call zrodlo%zrodlo_alokuj_pamiec(N,lModow,lModowEvan)
+        if(lModow > 0) then
         ! POBIERAMY MODY POPRZECZNE ORAZ ICH WEKTORY FALOWE
         ! pobieramy od razu z evanescentnymi wektorami
         call modpop_get_km (lModow+lModowEvan,zrodlo%k_m_in,zrodlo%k_m_out)
         call modpop_get_chi(lModow+lModowEvan,N,zrodlo%Chi_m_in,zrodlo%Chi_m_out)
+
+        endif
         ! MODUL RELACJI DYSPERSJI JUZ NIE POTRZEBNY
         call modpop_zwalnienie_pamieci()
 
