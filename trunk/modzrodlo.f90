@@ -280,7 +280,7 @@ contains
         integer :: N ! liczba oczek dla zrodla
         integer :: lModow,lModowEvan
         ! zmienne pomocnicze
-        integer :: i,j,k,ntmp,l
+        integer :: i,j,k,ntmp
 
         dx  = pdx*L2LR    ! konwertujemy do jednostek donorowych
         Ef  = pEf/1000.0/Rd
@@ -699,8 +699,8 @@ contains
         doubleprecision :: pdx
         integer         :: v,i
         doubleprecision :: dx ,Ef ,Bz , bpart , ypos
-        integer         :: k,p
-        complex*16      :: Xkn , deltamk , deltapk , kvec , tmpXkn
+        integer         :: k
+        complex*16      :: Xkn , deltamk
 
         dx  = pdx
         Ef  = atomic_Ef/1000.0/Rd
