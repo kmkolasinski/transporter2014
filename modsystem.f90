@@ -1117,10 +1117,10 @@ module modsystem
 
         fpm(1)=wypisz_informacje ! nie wypisuj informacji
         fpm(2)=liczba_konturow   ! liczba konturow
-        fpm(3)=6                 ! wykladnik bledu ponizej ktorego procedura sie zatrzymuje: e=10^(fpm(3))
+        fpm(3)=12                ! wykladnik bledu ponizej ktorego procedura sie zatrzymuje: e=10^(fpm(3))
         fpm(4)=maks_iter         ! maksymalna liczba iteracji po ktorej jak sie nie zbiegnie to proced. sie zatrzyma
         fpm(5)=0                 ! startujemy z domyslnymi wektorami (jak 1 to z dostarczonymi)
-        fpm(6)=1                 ! kryterium zbieznosci poprzez residuum (0 albo 1)
+        fpm(6)=0                 ! kryterium zbieznosci poprzez residuum (0 albo 1)
 
         allocate(CMATA(TRANS_MAXN*5))
         allocate(IDXA (TRANS_MAXN*5,2))
