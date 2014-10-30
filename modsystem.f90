@@ -1023,7 +1023,7 @@ module modsystem
             write(86554,*),Widmo_Evals(i)*1000.0*Rd
         enddo
     case(ZAPISZ_WIDMO_HRZNTL)
-        write(86554,"(3000e20.6)"),DBLE(Widmo_Evals(s1:s2))
+        write(86554,"(3000e20.6)"),DBLE(Widmo_Evals(s1:s2))*1000.0*Rd
     case(ZAPISZ_STANY_WLASNE)
         do i = x1 , x2
         do j = y1 , y2
