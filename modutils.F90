@@ -26,8 +26,69 @@
         public:: write_to_filei_scale
         public:: save_all
         public:: printDate
-
+        public:: vector_pearson_correlation
+        public:: matrix_pearson_correlation
         contains
+
+        double precision function vector_pearson_correlation(vecA,vecB) result(rval)
+            double precision, dimension(:), intent(in) :: vecA, vecB
+
+            integer :: n,i
+            doubleprecision :: minmaxA(2) , minmaxB(2) , aveA,aveB
+            double precision, dimension(:), allocatable :: vA , vB
+            n = size(vecA)
+
+            allocate(vA(n))
+            allocate(vB(n))
+            minmaxA(:) = vecA(1)
+            minmaxB(:) = vecB(1)
+
+            do i = 1 , n
+                if( minmaxA(1) > vecA(i) ) minmaxA(1) = vecA(i)
+                if( minmaxA(2) < vecA(i) ) minmaxA(2) = vecA(i)
+
+                if( minmaxB(1) > vecB(i) ) minmaxB(1) = vecB(i)
+                if( minmaxB(2) < vecB(i) ) minmaxB(2) = vecB(i)
+            enddo
+
+            print*,"Min:Max A:",minmaxA
+            print*,"Min:Max B:",minmaxB
+            vA = vecA
+            vB = vecB
+            vA = (vA - minmaxA(1))/(minmaxA(2)-minmaxA(1))
+            vB = (vB - minmaxB(1))/(minmaxB(2)-minmaxB(1))
+            aveA = sum(vA)/n
+            aveB = sum(vB)/n
+
+
+            rval = sum( (vA-aveA) * (vB-aveB)   )
+            rval = rval / sqrt(sum( (vA-aveA)**2  ))
+            rval = rval / sqrt(sum( (vB-aveB)**2  ))
+
+            deallocate(va)
+            deallocate(vb)
+        end function vector_pearson_correlation
+
+        double precision function matrix_pearson_correlation(matA,matB) result(rval)
+            double precision, dimension(:,:), intent(in) :: matA, matB
+            double precision, dimension(:), allocatable :: vA , vB
+
+            integer :: n1, n2 , n , i , j
+            n1 = size(matA,1)
+            n2 = size(matA,2)
+            n  = n1 * n2
+            allocate(vA(n))
+            allocate(vB(n))
+            do i = 1 , n1
+            do j = 1 , n2
+                vA(i + (j-1)*n1) = matA(i,j)
+                vB(i + (j-1)*n1) = matB(i,j)
+            enddo
+            enddo
+            rval = vector_pearson_correlation(va,vb);
+            deallocate(va)
+            deallocate(vb)
+        end function matrix_pearson_correlation
 
         subroutine write_to_file(indx,file_name,F,NX,NY)
               integer,intent(in)::indx

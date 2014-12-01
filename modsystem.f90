@@ -389,7 +389,7 @@ module modsystem
             enddo
 
         enddo ! end of petla po modach
-
+	 zrodla(nrz)%ck(:)      = 0
         deallocate(CMATA)
         deallocate(IDXA)
         deallocate(VPHI)
