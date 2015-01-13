@@ -355,7 +355,7 @@ module modsystem
         ! --------------------------------------------------------------------
         call wypelnij_macierz()
         call convert_to_HB(MATASIZE,IDXA,HBROWS)
-
+        call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,1)
         do mod_in = 1 , zrodla(nrz)%liczba_modow
 
             zrodla(nrz)%ck(:)      = 0
@@ -369,9 +369,8 @@ module modsystem
                 VPHI(GINDEX(ni,nj)) = zrodla(nrz)%Fj(i)
             enddo
 
+            call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,2)
 
-
-            call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI)
             call oblicz_TR(nrz,mod_in)
             call system_oblicz_J()
 
@@ -389,7 +388,12 @@ module modsystem
             enddo
 
         enddo ! end of petla po modach
-	 zrodla(nrz)%ck(:)      = 0
+        print*,"T = ", TRANS_T
+        print*,"R = ", TRANS_R
+        print*,"W = ", TRANS_R + TRANS_T
+        call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,3)
+	    zrodla(nrz)%ck(:)      = 0
+
         deallocate(CMATA)
         deallocate(IDXA)
         deallocate(VPHI)
@@ -721,9 +725,7 @@ module modsystem
         do i = 1 ,no_zrodel
             if(i /= nrz) TRANS_T = TRANS_T + sum( abs(zrodla(i)%Jout(:)) )
         enddo
-        print*,"T = ", TRANS_T
-        print*,"R = ", TRANS_R
-        print*,"W = ", TRANS_R + TRANS_T
+
 
     end subroutine oblicz_TR
     ! -------------------------------------------------------------------
@@ -795,7 +797,7 @@ module modsystem
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni - rozbieg + 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-                UTOTAL(ni:mi,nj:mj) = 0
+                UTOTAL(mi:ni,nj:mj) = 0
             case (ZRODLO_KIERUNEK_GORA)
                 ni = zrodla(nrz)%polozenia(1,1)
                 nj = zrodla(nrz)%polozenia(1,2) + 1
@@ -1350,15 +1352,17 @@ module modsystem
       end subroutine convert_to_HB
 
 
-    subroutine solve_system(no_rows,no_vals,colptr,rowind,values,b)
+    subroutine solve_system(no_rows,no_vals,colptr,rowind,values,b,iopt)
         integer,intent(in)                 :: no_rows
         integer,intent(in)                 :: no_vals
         integer,intent(in),dimension(:)    :: colptr,rowind
         complex*16,intent(in),dimension(:) :: values
         complex*16,intent(inout),dimension(:) :: b
+        integer :: iopt
+        integer n, nnz, nrhs, ldb
 
-        integer n, nnz, nrhs, ldb, info, iopt
-        integer*8 factors
+        integer, save    ::  info = 0
+        integer*8 , save :: factors = 0
 !
 !      call zhbcode1(n, n, nnz, values, rowind, colptr)
 !
@@ -1368,9 +1372,10 @@ module modsystem
         ldb  = n
         nrhs = 1
 
-
+      selectcase (iopt)
+      case (1)
 ! First, factorize the matrix. The factors are stored in *factors* handle.
-      iopt = 1
+      !iopt = 1
       call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr , rowind , b, ldb,factors, info )
 !
       if (info .eq. 0) then
@@ -1378,21 +1383,22 @@ module modsystem
       else
          write(*,*) 'INFO from factorization = ', info
       endif
-!
+      case(2)
 ! Second, solve the system using the existing factors.
-      iopt = 2
+!      iopt = 2
       call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind ,  b, ldb,factors, info )
 !
       if (info .eq. 0) then
-         write (*,*) 'Solve succeeded'
+!         write (*,*) 'Solve succeeded'
 !         write (*,*) (b(i), i=1, n)
       else
          write(*,*) 'INFO from triangular solve = ', info
       endif
-
+      case(3)
 ! Last, free the storage allocated inside SuperLU
-      iopt = 3
+!      iopt = 3
       call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind, b, ldb,factors, info )
+      endselect
 
       endsubroutine solve_system
 

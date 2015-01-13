@@ -462,7 +462,7 @@ MODULE modpop
         Ef    = pEf/Rd/1000 ! bo Ef w meV
         t0    = 0.5/DX/DX
         BZ    = BtoDonorB(pB)
-        hny   = (N+1)/2.0!
+        hny   = (N+1)/2.0! dobor odpowieniego cechowania
 
 
 
@@ -559,9 +559,10 @@ MODULE modpop
                 lambda= (ALPHA(i)/BETA(i))
                 !print"(i4,12f16.10)",i,abs(lambda),log(lambda)/II/DX*L2LR
                 if(  abs(abs(lambda) - 1.0) < 1.0E-6 ) then
-                    kvec  = log(lambda)/II/DX*L2LR
+                    kvec  = log(lambda)/II/DX   ! spradzamy znak Kvec zeby policzyc ile jest wektorow
+                                                ! w jedna strone
                     !print"(i4,12f16.10)",i,abs(lambda),log(lambda)/II/DX*L2LR
-                    if(dble(kvec) > 0)LICZBA_MODOW = LICZBA_MODOW + 1
+                    if(dble(kvec) > 0) LICZBA_MODOW = LICZBA_MODOW + 1
                 endif
             endif
         enddo
@@ -595,7 +596,7 @@ MODULE modpop
             if(abs(Beta(i))>1e-16) then
                 lambda = (ALPHA(i)/BETA(i))
 
-                if(  abs(abs(lambda) - 1.0) < 1.0E-8 ) then
+                if(  abs(abs(lambda) - 1.0) < 1.0E-6 ) then
                     kvec  = (log(lambda)/II/DX)
                     if(dble(kvec) > 0) then
                         num_in                   = num_in + 1
@@ -619,7 +620,7 @@ MODULE modpop
         call modpop_sort_vectors_by_values(Chi_M_IN (:,1:LICZBA_MODOW),K_M_IN (1:LICZBA_MODOW),+1)
         call modpop_sort_vectors_by_values(Chi_M_OUT(:,1:LICZBA_MODOW),K_M_OUT(1:LICZBA_MODOW),+1)
 
-
+        if( TRANS_DEBUG ) then
         print*,"-------------------------------------------------------------"
         print*," K wave.  :         Input mod.      |         Output mod."
         print*,"-------------------------------------------------------------"
@@ -632,11 +633,13 @@ MODULE modpop
         print*,""
         print*,"WEKTORY EVANESCENTNE (IN/OUT):"
 
+        endif ! end of if(TRANS_DEBUG)
+
         do i = 2*N , 1 , -1
             if(abs(Beta(i))>1e-16) then
                 lambda= (ALPHA(i)/BETA(i))
                 kvec  = (log(lambda)/DX)
-!                print*,i,kvec*L2LR
+
                 if( abs(lambda) > 1 + 1E-6 ) then
 
                     num_out                  = num_out + 1
@@ -679,7 +682,7 @@ MODULE modpop
                 K_M_OUT  (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_OUT(i)
             endif
         enddo
-
+        if ( TRANS_DEBUG ) then
         print*,"-------------------------------------------------------------"
         print*," K evan.  :         Input mod.      |         Output mod."
         print*,"-------------------------------------------------------------"
@@ -687,6 +690,8 @@ MODULE modpop
              print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",K_M_IN(i)*L2LR," | ",K_M_OUT(i)*L2LR
         enddo
         print*,"-------------------------------------------------------------"
+        endif
+
 
         deallocate(ALPHA)
         deallocate(BETA)

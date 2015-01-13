@@ -20,7 +20,7 @@ MODULE modjed
     double precision :: atomic_Ef   ! energia elektronu [meV]
     double precision :: atomic_Bz   ! polemagnetyczne w [T]
 
-    logical,parameter :: TRANS_DEBUG = .false.
+    logical,parameter :: TRANS_DEBUG = .true.
 
     ENUM,BIND(C)
         ENUMERATOR :: B_NORMAL          = 0 ! FLAGA OZNACZA ZE TO NIE JEST BRZEG
