@@ -39,7 +39,7 @@ endif
 
 
 
-transporter: main.f90 modutils.o modinip.o modjed.o modpop.o modzrodlo.o zgssv.o modsystem.o
+transporter: main.f90 modutils.o modinip.o modjed.o modpop.o spinmodpop.o modspinzrodlo.o modzrodlo.o zgssv.o modsystem.o spinmodsystem.o
 	$(FC) $(FBFLAGS)  main.f90 *.o $(LIBS)   -o $@
 modinip.o: modinip.F90
 	$(FC) $(FCFLAGS) modinip.F90 -o $@
@@ -49,10 +49,18 @@ modjed.o: modjed.F90
 	$(FC) $(FCFLAGS) modjed.F90 -o $@
 modpop.o: modpop.F90
 	$(FC) $(FCFLAGS) modpop.F90 -o $@
+spinmodpop.o: spinmodpop.f90
+	$(FC) $(FCFLAGS) spinmodpop.f90 -o $@
+
 modzrodlo.o: modzrodlo.f90
 	$(FC) $(FCFLAGS) modzrodlo.f90 -o $@
+modspinzrodlo.o: modspinzrodlo.f90
+	$(FC) $(FCFLAGS) modspinzrodlo.f90 -o $@
+
 modsystem.o: modsystem.f90
 	$(FC) $(FCFLAGS) modsystem.f90 -o $@
+spinmodsystem.o: spinmodsystem.f90
+	$(FC) $(FCFLAGS) spinmodsystem.f90 -o $@
 zgssv.o:c_fortran_zgssv.c
 	gcc   $(FCCFLAGS) c_fortran_zgssv.c -o $@
 

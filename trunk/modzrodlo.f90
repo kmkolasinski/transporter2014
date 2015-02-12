@@ -27,6 +27,8 @@ implicit none
         complex*16,dimension(:),allocatable       :: k_m_in   ! wektory falowe zwiazane z modami wchodz.
         complex*16,dimension(:),allocatable       :: k_m_out  ! z wychodzacymi
         complex*16,dimension(:),allocatable       :: deltamk  ! tablica pomocnicza przyspieszajaca liczenie elementow macierzowych
+        complex*16,dimension(:),allocatable       :: deltaink  ! tablica pomocnicza przyspieszajaca liczenie elementow macierzowych
+        complex*16,dimension(:),allocatable       :: deltaoutk  ! tablica pomocnicza przyspieszajaca liczenie elementow macierzowych
         integer                                   :: liczba_modow ! liczba dostepnym w zrodle modow
         integer                                   :: liczba_evans ! liczba modow evanescentnych
         complex*16,dimension(:),allocatable       :: ck       ! amplitudy wchodzace
@@ -91,6 +93,8 @@ contains
         if(allocated(zrodlo%k_m_in))    deallocate(zrodlo%k_m_in);
         if(allocated(zrodlo%k_m_out))   deallocate(zrodlo%k_m_out);
         if(allocated(zrodlo%deltamk))   deallocate(zrodlo%deltamk);
+        if(allocated(zrodlo%deltaink))   deallocate(zrodlo%deltaink);
+        if(allocated(zrodlo%deltaoutk))   deallocate(zrodlo%deltaoutk);
         if(allocated(zrodlo%ck))        deallocate(zrodlo%ck);
         if(allocated(zrodlo%dk))        deallocate(zrodlo%dk);
         if(allocated(zrodlo%Jin))       deallocate(zrodlo%Jin);
@@ -129,6 +133,8 @@ contains
         allocate(zrodlo%k_m_in   (lM+lEvanMods));
         allocate(zrodlo%k_m_out  (lM+lEvanMods));
         allocate(zrodlo%deltamk  (lM+lEvanMods));
+        allocate(zrodlo%deltaink (lM+lEvanMods));
+        allocate(zrodlo%deltaoutk(lM+lEvanMods));
         allocate(zrodlo%ck       (lM+lEvanMods));
         allocate(zrodlo%dk       (lM+lEvanMods));
         allocate(zrodlo%Jin      (lM+lEvanMods));
@@ -166,11 +172,11 @@ contains
         print*,"    HNY     = ",zrodlo%hnY
         write(*,"(A,2f10.4,A)"),"    R1(x,y) = (",zrodlo%r1,")"
         write(*,"(A,2f10.4,A)"),"    R2(x,y) = (",zrodlo%r2,")"
-        print*,"    Mody wejsciowe/wyjsciowe:"
+        print*,"    Mody wejsciowe/wyjsciowe:",zrodlo%liczba_modow
         do i = 1 , zrodlo%liczba_modow
             print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",zrodlo%k_m_in(i)*L2LR," | ",zrodlo%k_m_out(i)*L2LR
         enddo
-        print*,"    Mody wejsciowe/wyjsciowe evanescentne:"
+        print*,"    Mody wejsciowe/wyjsciowe evanescentne:",zrodlo%liczba_evans
         do i = zrodlo%liczba_modow + 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
             print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",zrodlo%k_m_in(i)*L2LR," | ",zrodlo%k_m_out(i)*L2LR
         enddo
@@ -249,8 +255,8 @@ contains
         no_modow = zrodlo%liczba_modow
 
         do i = 1 , zrodlo%N
-        if(bSaveE)           write(4193,"(300e20.8)"),zrodlo%polozenia(i,:)*dx,abs(zrodlo%Chi_m_in(i,:))**2,abs(zrodlo%Chi_m_out(i,:))**2
-        if(.not. bSaveE)     write(4193,"(300e20.8)"),zrodlo%polozenia(i,:)*dx,abs(zrodlo%Chi_m_in(i,1:no_modow ))**2,abs(zrodlo%Chi_m_out(i,1:no_modow))**2
+        if(bSaveE)           write(4193,"(300f20.8)"),zrodlo%polozenia(i,:)*dx,abs(zrodlo%Chi_m_in(i,:))**2,abs(zrodlo%Chi_m_out(i,:))**2
+        if(.not. bSaveE)     write(4193,"(300f20.8)"),zrodlo%polozenia(i,:)*dx,abs(zrodlo%Chi_m_in(i,1:no_modow ))**2,abs(zrodlo%Chi_m_out(i,1:no_modow))**2
         enddo
         close(4193)
     end subroutine zrodlo_zapisz_mody
@@ -354,11 +360,8 @@ contains
 
             ! Wzynaczanie wektora pomocniczego
             do k = 1 , ntmp
-                if( k <= zrodlo%liczba_modow) then
-                    zrodlo%deltamk(k) = 2*II*sin(- zrodlo%k_m_in(k)*DX + DX*Bz*zrodlo%hny )
-                else
-                    zrodlo%deltamk(k) = exp( zrodlo%k_m_out(k)*DX + II*DX*Bz*zrodlo%hny ) - exp( -zrodlo%k_m_out(k)*DX - II*DX*Bz*zrodlo%hny)
-                endif
+                zrodlo%deltaink(k)  = exp( +DX*(zrodlo%k_m_in(k)  + II*Bz*zrodlo%hny)) - exp( -DX*(zrodlo%k_m_in(k)  + II*Bz*zrodlo%hny))
+                zrodlo%deltaoutk(k) = exp( +DX*(zrodlo%k_m_out(k) + II*Bz*zrodlo%hny)) - exp( -DX*(zrodlo%k_m_out(k) + II*Bz*zrodlo%hny))
             enddo
             ! ----------------------------------------------------------------------
             ! Macierze warunkow brzegowych dla zrodel skierowanych w prawo ------>
@@ -393,11 +396,8 @@ contains
         case (ZRODLO_KIERUNEK_LEWO)
             ! Wzynaczanie wektora pomocniczego
             do k = 1 , ntmp
-                if( k <= zrodlo%liczba_modow) then
-                    zrodlo%deltamk(k) = 2*II*sin(+zrodlo%k_m_in(k)*DX + DX*Bz*zrodlo%hny )
-                else
-                    zrodlo%deltamk(k) = exp( zrodlo%k_m_in(k)*DX + II*DX*Bz*zrodlo%hny ) - exp( -zrodlo%k_m_in(k)*DX - II*DX*Bz*zrodlo%hny)
-                endif
+                zrodlo%deltaink(k)  = exp( +DX*(zrodlo%k_m_in(k)  + II*Bz*zrodlo%hny)) - exp( -DX*(zrodlo%k_m_in(k)  + II*Bz*zrodlo%hny))
+                zrodlo%deltaoutk(k) = exp( +DX*(zrodlo%k_m_out(k) + II*Bz*zrodlo%hny)) - exp( -DX*(zrodlo%k_m_out(k) + II*Bz*zrodlo%hny))
             enddo
 
             ! ----------------------------------------------------------------------
@@ -430,7 +430,8 @@ contains
             end do
             ! ---------------------------------------------------------------- !
         case (ZRODLO_KIERUNEK_GORA)
-
+            print*,"MODZRODLO: Zrodlo wejsciowe nie obslugiwane!"
+            stop
 
 
             ! Wzynaczanie wektora pomocniczego
@@ -495,6 +496,8 @@ contains
 
             ! ---------------------------------------------------------------- !
             case (ZRODLO_KIERUNEK_DOL)
+            print*,"MODZRODLO: Zrodlo wejsciowe nie obslugiwane!"
+            stop
             ! Wzynaczanie wektora pomocniczego
             zrodlo%deltamk(:) = 0 ! dajemy zero bo nie bedzie uzywane, bo tutaj cechowanie zalezy jeszcze od x
 
@@ -621,13 +624,11 @@ contains
                 case (ZRODLO_KIERUNEK_PRAWO)
                     post             = -(0.5/DX/DX)*EXP(II*DX*DX*pj*BZ)
                     do k = 1 , zrodlo%liczba_modow
-                        kvec         = zrodlo%k_m_in(k)
-                        deltapk      = 2*II*sin(+kvec*DX + DX*Bz*zrodlo%hny )
-                        zrodlo%Fj(i) = zrodlo%Fj(i) + zrodlo%ck(k)*deltapk*zrodlo%Chi_m_in (i,k)
+                        zrodlo%Fj(i) = zrodlo%Fj(i) + zrodlo%ck(k)*zrodlo%deltaink(k)*zrodlo%Chi_m_in (i,k)
                     enddo
                     do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
                         Xkn          = zrodlo%SijAijCkAuxVec(k)
-                        deltamk      = zrodlo%deltamk(k)
+                        deltamk      = zrodlo%deltaoutk(k)
                         zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_out(i,k)
                     enddo
                 ! ---------------------------------------------------------------- !
@@ -638,13 +639,11 @@ contains
                 case (ZRODLO_KIERUNEK_LEWO)
                         post         = (0.5/DX/DX)*EXP(-II*DX*DX*pj*BZ)
                     do k = 1 , zrodlo%liczba_modow
-                        kvec         = zrodlo%k_m_in(k)
-                        deltapk      = 2*II*sin(-kvec*DX + DX*Bz*zrodlo%hny )
-                        zrodlo%Fj(i) = zrodlo%Fj(i) + zrodlo%ck(k)*deltapk*zrodlo%Chi_m_out(i,k)
+                        zrodlo%Fj(i) = zrodlo%Fj(i) + zrodlo%ck(k)*zrodlo%deltaoutk(k)*zrodlo%Chi_m_out(i,k)
                     enddo
                     do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
                         Xkn          = zrodlo%SijAijCkAuxVec(k)
-                        deltamk      = zrodlo%deltamk(k)
+                        deltamk      = zrodlo%deltaink(k)
                         zrodlo%Fj(i) = zrodlo%Fj(i) - Xkn*deltamk*zrodlo%Chi_m_in(i,k)
                     enddo
 
@@ -654,6 +653,8 @@ contains
                 !                        --------------->
                 !
                 case (ZRODLO_KIERUNEK_GORA)
+                    print*,"MODZRODLO: Zrodlo wejsciowe nie obslugiwane!"
+                    stop
                     post             = -(0.5/DX/DX)
                     bpart            = Bz*( xpos  - zrodlo%hnx )
                     do k = 1 , zrodlo%liczba_modow
@@ -720,7 +721,7 @@ contains
         case (ZRODLO_KIERUNEK_PRAWO)
 
             do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-                Xkn = Xkn + zrodlo%deltamk(k)*zrodlo%Chi_m_out(v,k)*zrodlo%SijChiAuxMat(k,i);
+                Xkn = Xkn + zrodlo%deltaoutk(k)*zrodlo%Chi_m_out(v,k)*zrodlo%SijChiAuxMat(k,i);
             enddo
         ! -----------------------------------------------------------------
         !       Wyznaczamy alpha(v,i) dla wejsc skierowanych w lewo
@@ -730,7 +731,7 @@ contains
         ! -----------------------------------------------------------------
         case (ZRODLO_KIERUNEK_LEWO)
             do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
-                Xkn = Xkn + zrodlo%deltamk(k)*zrodlo%Chi_m_in(v,k)*zrodlo%SijChiAuxMat(k,i);
+                Xkn = Xkn + zrodlo%deltaink(k)*zrodlo%Chi_m_in(v,k)*zrodlo%SijChiAuxMat(k,i);
             enddo
 
         ! -----------------------------------------------------------------
@@ -741,7 +742,8 @@ contains
         ! -----------------------------------------------------------------
 
         case (ZRODLO_KIERUNEK_GORA)
-
+            print*,"MODZRODLO: Zrodlo wejsciowe nie obslugiwane!"
+            stop
             bpart = Bz*( zrodlo%polozenia(v,1)*dx -  zrodlo%hnx)
             ypos  = (zrodlo%polozenia(v,2))*dx
             do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
@@ -765,7 +767,8 @@ contains
         !
         ! -----------------------------------------------------------------
         case (ZRODLO_KIERUNEK_DOL)
-
+            print*,"MODZRODLO: Zrodlo wejsciowe nie obslugiwane!"
+            stop
             bpart = Bz*( zrodlo%polozenia(v,1)*dx -  zrodlo%hnx)
             ypos  = (zrodlo%polozenia(v,2))*dx
             do k = 1 , zrodlo%liczba_modow + zrodlo%liczba_evans
@@ -852,7 +855,7 @@ contains
         do k = 1 , zrodlo%liczba_modow
             Jin  = 0
             Jout = 0
-            kvec = zrodlo%k_m_in(k)
+            kvec = abs(zrodlo%k_m_in(k))
 
             select case (zrodlo%bKierunek)
             ! ------------------------------------------------------------------

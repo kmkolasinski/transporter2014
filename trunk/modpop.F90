@@ -89,7 +89,7 @@ MODULE modpop
         allocate(Uvec(N))
         allocate(Hamiltonian(N,N))
 
-        !Uvec        = pUVEC/Rd/1000
+
         do num = 1 , N
             Uvec(num)        = pUVEC(num+1)/Rd/1000 ! bo Ef w meV
         enddo
@@ -454,6 +454,7 @@ MODULE modpop
         COMPLEX*16 , dimension(:,:)   , allocatable  :: Z
         COMPLEX*16 :: DUMMY(1,1),lambda , YcY
         complex*16 :: kvec
+        doubleprecision :: dkvec
         bPoziome = .false. ! ustalamy na sztywno zrodla prawo - lewo
 
         ! konwersja jednostek do jednostek donorowych
@@ -557,11 +558,11 @@ MODULE modpop
         do i = 1 , 2*N
             if(abs(Beta(i))>1e-16) then ! zgodnie z przykladem LApacka
                 lambda= (ALPHA(i)/BETA(i))
-                !print"(i4,12f16.10)",i,abs(lambda),log(lambda)/II/DX*L2LR
-                if(  abs(abs(lambda) - 1.0) < 1.0E-6 ) then
+
+                if(  abs(abs(lambda) - 1.0) < 1.0E-6 ) then ! jesli nie mod evanescentny
                     kvec  = log(lambda)/II/DX   ! spradzamy znak Kvec zeby policzyc ile jest wektorow
                                                 ! w jedna strone
-                    !print"(i4,12f16.10)",i,abs(lambda),log(lambda)/II/DX*L2LR
+
                     if(dble(kvec) > 0) LICZBA_MODOW = LICZBA_MODOW + 1
                 endif
             endif
@@ -589,7 +590,6 @@ MODULE modpop
         print*,"WEKTORY FALOWE (IN/OUT):"
 
 
-
         num_in  = 0
         num_out = 0
         do i = 1 , 2*N
@@ -597,8 +597,10 @@ MODULE modpop
                 lambda = (ALPHA(i)/BETA(i))
 
                 if(  abs(abs(lambda) - 1.0) < 1.0E-6 ) then
-                    kvec  = (log(lambda)/II/DX)
-                    if(dble(kvec) > 0) then
+                    kvec  = (log(lambda)/DX)
+                    !kvec  = (log(lambda)/II/DX) ! stare
+                    if(imag(kvec) > 0) then
+                    !if(dble(kvec) > 0) then
                         num_in                   = num_in + 1
                         K_M_IN(num_in)           = kvec
                         Chi_M_IN(2:N+1,num_in)   = Z(N+1:2*N,i)
@@ -617,23 +619,23 @@ MODULE modpop
             endif
         enddo
 
-        call modpop_sort_vectors_by_values(Chi_M_IN (:,1:LICZBA_MODOW),K_M_IN (1:LICZBA_MODOW),+1)
-        call modpop_sort_vectors_by_values(Chi_M_OUT(:,1:LICZBA_MODOW),K_M_OUT(1:LICZBA_MODOW),+1)
+        call modpop_sort_vectors_by_values(Chi_M_IN (:,1:LICZBA_MODOW),K_M_IN (1:LICZBA_MODOW),+1,0)
+        call modpop_sort_vectors_by_values(Chi_M_OUT(:,1:LICZBA_MODOW),K_M_OUT(1:LICZBA_MODOW),+1,0)
 
-        if( TRANS_DEBUG ) then
-        print*,"-------------------------------------------------------------"
-        print*," K wave.  :         Input mod.      |         Output mod."
-        print*,"-------------------------------------------------------------"
-        do i = 1 , LICZBA_MODOW
-             print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",K_M_IN(i)*L2LR," | ",K_M_OUT(i)*L2LR
-        enddo
-        print*,"-------------------------------------------------------------"
-
-
-        print*,""
-        print*,"WEKTORY EVANESCENTNE (IN/OUT):"
-
-        endif ! end of if(TRANS_DEBUG)
+!        if( TRANS_DEBUG ) then
+!        print*,"-------------------------------------------------------------"
+!        print*," K wave.  :         Input mod.      |         Output mod."
+!        print*,"-------------------------------------------------------------"
+!        do i = 1 , LICZBA_MODOW
+!             print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",K_M_IN(i)*L2LR," | ",K_M_OUT(i)*L2LR
+!        enddo
+!        print*,"-------------------------------------------------------------"
+!
+!
+!        print*,""
+!        print*,"WEKTORY EVANESCENTNE (IN/OUT):"
+!
+!        endif ! end of if(TRANS_DEBUG)
 
         do i = 2*N , 1 , -1
             if(abs(Beta(i))>1e-16) then
@@ -641,7 +643,6 @@ MODULE modpop
                 kvec  = (log(lambda)/DX)
 
                 if( abs(lambda) > 1 + 1E-6 ) then
-
                     num_out                  = num_out + 1
                     K_m_out(num_out)         = kvec
                     Chi_m_out(2:N+1,num_out) = Z(N+1:2*N,i)
@@ -667,30 +668,49 @@ MODULE modpop
             endif ! end of if beta
         enddo
 
-        call modpop_sort_vectors_by_values(Chi_M_IN (:,LICZBA_MODOW+1:N),K_M_IN (LICZBA_MODOW+1:N),-1)
-        call modpop_sort_vectors_by_values(Chi_M_OUT(:,LICZBA_MODOW+1:N),K_M_OUT(LICZBA_MODOW+1:N),-1)
+        call modpop_sort_vectors_by_values(Chi_M_IN (:,LICZBA_MODOW+1:N),K_M_IN (LICZBA_MODOW+1:N),-1,1)
+        call modpop_sort_vectors_by_values(Chi_M_OUT(:,LICZBA_MODOW+1:N),K_M_OUT(LICZBA_MODOW+1:N),-1,1)
 
         LICZBA_MODOW_EVANESCENTYCH = 0
         ! bierzemy tylko te mody ktore nie maja czesci falowej (tj tylko czyste evanescentne exp(+/-kx))
         do i = LICZBA_MODOW + 1 , N
-            if( abs(imag(K_M_OUT(i))) < 1.0E-6 .and. abs(imag(K_M_IN(i))) < 1.0E-6 .and. &
-             &  abs(dble(K_M_OUT(i))) > 1.0E-6 .and. abs(dble(K_M_IN(i))) > 1.0E-6  ) then
+            !if( abs(imag(K_M_OUT(i))) < 1.0E-6 .and. abs(imag(K_M_IN(i))) < 1.0E-6 .and. &
+            ! &  abs(dble(K_M_OUT(i))) > 1.0E-6 .and. abs(dble(K_M_IN(i))) > 1.0E-6  ) then
                 LICZBA_MODOW_EVANESCENTYCH = LICZBA_MODOW_EVANESCENTYCH + 1
-                Chi_M_IN (:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_IN(:,i)
-                K_M_IN   (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_IN(i)
-                Chi_M_OUT(:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_OUT(:,i)
-                K_M_OUT  (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_OUT(i)
-            endif
+!                Chi_M_IN (:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_IN(:,i)
+!                K_M_IN   (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_IN(i)
+!!
+!                Chi_M_OUT(:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_OUT(:,i)
+!                K_M_OUT  (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_OUT(i)
+
+                Chi_M_OUT(:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_IN(:,i)
+                K_M_OUT  (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = -K_M_IN(i)
+                call modpop_calc_mode_from_k((K_M_OUT(i)),Chi_m_out(:,i),DX,N+2,Ef,BZ,Uvec,pbHorizontal);
+           !endif
+
         enddo
-        if ( TRANS_DEBUG ) then
-        print*,"-------------------------------------------------------------"
-        print*," K evan.  :         Input mod.      |         Output mod."
-        print*,"-------------------------------------------------------------"
-        do i = LICZBA_MODOW + 1 , LICZBA_MODOW_EVANESCENTYCH + LICZBA_MODOW
-             print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",K_M_IN(i)*L2LR," | ",K_M_OUT(i)*L2LR
-        enddo
-        print*,"-------------------------------------------------------------"
-        endif
+        LICZBA_MODOW_EVANESCENTYCH = 1*LICZBA_MODOW_EVANESCENTYCH/8
+
+        !i = 3
+        !call modpop_calc_mode_from_k((K_M_IN(i)),Chi_m_out(:,i),DX,N+2,Ef,BZ,Uvec,pbHorizontal);
+
+!        call zrodlo_mode_from_kvec(K_M_IN(i),N+2,UVEC,Chi_M_IN(:,i))
+!        open(unit = 333, file= "evan.txt" )
+!        do dkvec = -3.14159/DX/10 , 3.14159/DX/10 , 0.01
+!            K_M_IN(i) = - II * CMPLX(0.0D0,dkvec)
+!            call zrodlo_mode_from_kvec(K_M_IN(i),N+2,UVEC,Chi_M_IN(:,i))
+!        enddo
+
+
+!        if ( TRANS_DEBUG ) then
+!        print*,"-------------------------------------------------------------"
+!        print*," K evan.  :         Input mod.      |         Output mod."
+!        print*,"-------------------------------------------------------------"
+!        do i = LICZBA_MODOW + 1 , LICZBA_MODOW_EVANESCENTYCH + LICZBA_MODOW
+!             print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",K_M_IN(i)*L2LR," | ",K_M_OUT(i)*L2LR
+!        enddo
+!        print*,"-------------------------------------------------------------"
+!        endif
 
 
         deallocate(ALPHA)
@@ -709,10 +729,10 @@ MODULE modpop
     end subroutine modpop_calc_modes_from_wfm
 
 
-    subroutine modpop_sort_vectors_by_values(vectors,vals,order)
+    subroutine modpop_sort_vectors_by_values(vectors,vals,order,takeReal)
         complex*16,dimension(:,:) :: vectors
         complex*16,dimension(:)   :: vals
-        integer :: order
+        integer :: order,takeReal
         complex*16,dimension(:),allocatable  :: tmpvec
         complex*16 :: tmpval
 
@@ -736,10 +756,18 @@ MODULE modpop
             do j = i+1 , n
                if(abs(vals(j)) > 1.0e-10) then
                if(order > 0 ) then
-                    if( abs(vals(imin)) < abs(vals(j)) ) imin = j
+                    if(takeReal == 0) then
+                        if( abs((vals(imin))) < abs((vals(j))) ) imin = j
+                    else
+                        if( abs(real(vals(imin))) < abs(real(vals(j))) ) imin = j
+                    endif
                endif
                if(order < 0 ) then
-                    if( abs(vals(imin)) > abs(vals(j)) ) imin = j
+                    if(takeReal == 0) then
+                        if( abs((vals(imin))) > abs((vals(j))) ) imin = j
+                    else
+                        if( abs(real(vals(imin))) > abs(real(vals(j))) ) imin = j
+                    endif
                endif
                endif
             enddo
@@ -755,6 +783,407 @@ MODULE modpop
 
         deallocate(tmpvec)
     end subroutine modpop_sort_vectors_by_values
+
+subroutine modpop_calc_mode_from_k(kvec,modek,pDx,pN,pEf,pB,pUvec,pbHorizontal)
+complex*16,intent(in)               :: kvec
+complex*16,intent(inout),dimension(:)     :: modek
+double precision,intent(in)               :: pDX
+integer,intent(in)                        :: pN
+double precision,intent(in)               :: pEf
+double precision,intent(in)               :: pB
+double precision,intent(in),dimension(pN) :: pUVEC
+logical, intent(in) :: pbHorizontal
+doubleprecision :: t0 , YcY ,delta
+complex*16 :: Cstar , Cnostar
+integer :: i,j
+
+complex*16,dimension(pN) :: a , c , b , r , Upet , u
+
+Upet = 0
+Upet(2:pN-1) = pUVEC(:)
+
+if(pbHorizontal == .true.) then
+!    do i = 1 , pN
+!    write(111,"(4f20.8)"),i*1.0D0,modek(i),abs(modek(i))**2
+!    enddo
+
+    t0 = 0.5/pdx/pdx
+
+!    b= 0
+!
+!    do i = 2 , pN-1
+!        b(i) = sin(i*3.1)
+!    enddo
+!    r            =  0
+!    !r(3) = 1
+!    YcY = sum(abs(b(:))**2)*pDX
+!    b(:) = b(:)/sqrt(YcY)
+!    u = 0
+!    delta = 1
+!    do while( delta > 1.0E-16 )
+!
+!    delta = abs(sum(abs(u-b)**2)/sum(abs(u+b)**2))
+!    u = b
+!
+!    do i = 2 , pN-1
+!        Cstar = t0*exp(kvec*pdx)!*exp(-II*pDX*pDX*pB*(i-(pN+1)/2.0))
+!        b(i) = t0*(b(i-1)+b(i+1))/( 4*t0 + Upet(i)*0 - pEf - Cstar - conjg(Cstar) )
+!    enddo
+!    YcY = sum(abs(b(:))**2)*pDX
+!    b(:) = b(:)/sqrt(YcY)
+!    enddo
+!    modek = u
+
+
+
+    !call  tridag(a,b,c,r,u,pN)
+    !modek  = u
+
+
+!    modek = 0
+!    modek(1) = 0
+!    modek(2) = 1.0
+!    do i = 3 , pN-1
+!        Cstar   = exp(+kvec*pdx)*exp(-II*pDX*pDX*pB*(i-1-(pN+1)/2.0))
+!        Cnostar = exp(-kvec*pdx)*exp(+II*pDX*pDX*pB*(i-1-(pN+1)/2.0))
+!        modek(i) = -modek(i-2) + modek(i-1)*( 4 + UVEC(i-1)/t0 - pEf/t0 - Cstar - Cnostar )
+!    enddo
+!    modek(pN)  = 0
+!    modek(pN-1) = 1.0
+!    do i = pN-2 , 2 , -1
+!        Cstar = exp(+kvec*pdx)*exp(-II*pDX*pDX*pB*(i+1-(pN+1)/2.0))
+!        modek(i) = -modek(i+2) + modek(i+1)*( 4 + UVEC(i+1)/t0 - pEf/t0 - Cstar - conjg(Cstar) )
+!    enddo
+
+    a = modek
+    do i = 1 , pN
+        modek(i) = a(pN+1-i)
+    enddo
+
+    YcY = sum(abs(modek(:))**2)*pDX
+    modek(:) = modek(:)/sqrt(YcY)
+
+!    do i = 1 , pN
+!    write(112,"(4f20.8)"),i*1.0D0,modek(i),abs(modek(i))**2
+!    enddo
+
+else
+    print*,"ERROR::modpop_calc_mode_from_k nie ma jeszcze wejsc gora/dol"
+    stop
+endif
+!
+!
+end subroutine modpop_calc_mode_from_k
+
+!
+!      SUBROUTINE tridag(a,b,c,r,u,n)
+!      INTEGER n,NMAX
+!      complex*16 a(n),b(n),c(n),r(n),u(n)
+!      PARAMETER (NMAX=50000)
+!      INTEGER j
+!      complex*16 bet,gam(NMAX)
+!      if(b(1).eq.0.)pause 'tridag: rewrite equations'
+!      bet=b(1)
+!      u(1)=r(1)/bet
+!      do 11 j=2,n
+!        gam(j)=c(j-1)/bet
+!        bet=b(j)-a(j)*gam(j)
+!        if(bet.eq.0.)pause 'tridag failed'
+!        u(j)=(r(j)-a(j)*u(j-1))/bet
+!11    continue
+!      do 12 j=n-1,1,-1
+!        u(j)=u(j)-gam(j+1)*u(j+1)
+!12    continue
+!      return
+!      ENDSUBROUTINE tridag
+
+! dopuszczalne wartosci to: {3,4,5,6,8,10,12,16,20,24,32,40,48}
+  subroutine zrodlo_mode_from_kvec(kvec,pN,pUVEC,modek,pliczba_konturow,pwypisz_informacje,pmaks_iter)
+        complex*16 :: kvec
+        integer :: pN
+        double precision,intent(in),dimension(pN) :: pUVEC
+        complex*16,intent(inout),dimension(:)     :: modek
+        integer           :: NoStates
+        integer,optional  :: pliczba_konturow,pwypisz_informacje,pmaks_iter
+
+
+        integer :: fpm(128),MATASIZE,TRANS_MAXN
+        integer :: i,j,info,itmp,nw,M0,loop,no_evals,iter,Widmo_NoStates
+        integer :: liczba_konturow,wypisz_informacje,maks_iter
+        doubleprecision :: epsout
+        doubleprecision :: Emin, Emax , Ecurr , YcY
+
+
+        integer,allocatable                    :: HBROWS(:),IDXA(:,:)
+        complex*16,dimension(:,:), allocatable :: EVectors
+        complex*16,dimension(:), allocatable   :: CMatA
+        double precision,dimension(:), allocatable   :: Evalues,Rerrors
+
+        complex*16 :: Cstar , Cnostar
+
+
+!        call reset_clock()
+!        ! Przejscie do jednostek donorowych
+
+        Emin = Ef - Ef / 2.0
+        Emax = Ef + Ef / 2.0
+        NoStates   = pN/2
+        TRANS_MAXN = pN-2
+        print*,kvec*L2LR
+
+!        ! Na problem wlasny sa osobne indeksy
+!        allocate(WINDEX(nx,ny))
+!        WINDEX = 0
+!        iter   = 1
+!        do i = 1 , nx
+!        do j = 1 , ny
+!           if( GFLAGS(i,j) == B_NORMAL  ) then
+!                WINDEX(i,j) = iter
+!                iter = iter + 1
+!           endif
+!        enddo
+!        enddo
+!        TRANS_MAXN = iter-1
+!
+        ! ustalanie domyslnej liczby konturow i wypisywania
+        if(.not. present(pliczba_konturow)) then
+            liczba_konturow = 16
+        else
+            liczba_konturow = pliczba_konturow
+        endif
+        if(.not. present(pwypisz_informacje)) then
+            wypisz_informacje = 0
+        else
+            wypisz_informacje = pwypisz_informacje
+        endif
+        if(.not. present(pmaks_iter)) then
+            maks_iter = 200
+        else
+            maks_iter = pmaks_iter
+        endif
+
+        call feastinit(fpm)
+
+        fpm(1)=wypisz_informacje ! nie wypisuj informacji
+        fpm(2)=liczba_konturow   ! liczba konturow
+        fpm(3)=12                ! wykladnik bledu ponizej ktorego procedura sie zatrzymuje: e=10^(fpm(3))
+        fpm(4)=maks_iter         ! maksymalna liczba iteracji po ktorej jak sie nie zbiegnie to proced. sie zatrzyma
+        fpm(5)=0                 ! startujemy z domyslnymi wektorami (jak 1 to z dostarczonymi)
+        fpm(6)=0                 ! kryterium zbieznosci poprzez residuum (0 albo 1)
+!
+        allocate(CMATA(TRANS_MAXN*3))
+        allocate(IDXA (TRANS_MAXN*3,2))
+
+        itmp = 1
+        do i = 2 , pN - 1
+            iter = i - 1
+            if(i > 2) then
+                cmatA(itmp) = -t0
+                idxA(itmp,1) = iter
+                idxA(itmp,2) = iter-1
+                itmp = itmp + 1
+            endif
+                Cstar   = exp(+kvec*DX)*exp(-II*DX*DX*BZ*(iter-hny))
+                Cnostar = exp(-kvec*DX)*exp(+II*DX*DX*BZ*(iter-hny))
+                cmatA(itmp) = 4*t0 + pUVEC(iter) - t0*(Cstar + Cnostar)
+                idxA(itmp,1) = iter
+                idxA(itmp,2) = iter
+                itmp = itmp + 1
+
+            if(i < pN-1) then
+                cmatA(itmp) = -t0
+                idxA(itmp,1) = iter
+                idxA(itmp,2) = iter+1
+                itmp = itmp + 1
+            endif
+        enddo
+
+
+        itmp        = itmp - 1
+        MATASIZE    = itmp
+        nw          = itmp
+        if(wypisz_informacje==1) then
+            print*,"--------------------------------------------------"
+            print*,"Widmo:"
+            print*,"--------------------------------------------------"
+            print*,"Rozmiar problemu N:     ",TRANS_MAXN
+            print*,"Zakres energii:         ",Emin*1000.0*Rd," do ",Emax*1000.0*Rd,"w meV"
+            print*,"Liczba konturow:        ",liczba_konturow
+            print*,"Maksymalna liczba iter. :",maks_iter
+            print*,"Zalozona liczba stanow: ",NoStates
+        endif
+
+        ! -----------  ----system_inicjalizacja_ukladu---------------
+        !
+        ! -----------------------------------------------------------
+        allocate(HBROWS(TRANS_MAXN+1))
+        call modpop_convert_to_HB(MATASIZE,IDXA,HBROWS)
+!
+
+        ! zgadujemy liczbe stanow
+        M0  = NoStates
+
+        allocate(EVectors(TRANS_MAXN,M0))
+        allocate(Evalues(M0))
+        allocate(Rerrors(M0))
+
+
+
+        call zfeast_hcsrev('F',&                ! - 'F' oznacza ze podawana jest pelna macierz
+                              TRANS_MAXN,&    ! - rozmiar problemu (ile wezlow z flaga B_NORMAL)
+                              CMATA(1:nw),&    ! - kolejne nie zerowe wartosci w macierzy H
+                              HBROWS,&         ! - numeracja wierszy (rodzaj zapisu macierzy rzakidch)
+                              idxA(1:nw,2),&   ! - indeksy kolumn odpowiadaja tablicy wartosci CMATA
+                              fpm,&            ! - wektor z konfiguracja procedury
+                              epsout,&         ! - Residuum wyjsciowe
+                              loop, &          ! - Koncowa liczba iteracji
+                              Emin,&           ! - Minimalna energia przeszukiwania
+                              Emax,&           ! - Maksymalna energia
+                              M0,&             ! - Spodziewana liczba modow w zakresie (Emin,Emax)
+                              Evalues,&        ! - Wektor z otrzymanymi wartosciami wlasnymi
+                              EVectors,&       ! - Macierz z wektorami (kolejne kolumny odpowiadaja kolejnym wartoscia z tablicy Evalues)
+                              no_evals,&       ! - Liczba otrzymanych wartosci z przedziale (Emin,Emax)
+                              Rerrors,&        ! - Wektor z bledami dla kolejnych wartosci wlasnych
+                              info)            ! - Ewentualne informacje o bledach
+
+
+
+        if(wypisz_informacje==1) then
+            print*,"Eps wyjsciowy           :",  epsout
+            print*,"Liczba iteracji         :",  loop
+            print*,"Znaleziona l. stanow    :",  no_evals
+            print*,"Info                    :",  info
+            print*,"--------------------------------------------------"
+        endif
+
+        Widmo_NoStates = no_evals
+
+        ! ----------------------------------------------------------------------------------
+        ! Obsluga bledow:
+        ! ----------------------------------------------------------------------------------
+        selectcase(info)
+        case( 202 )
+            print*," Error : Problem with size of the system n (n≤0) "
+            stop
+        case( 201 )
+            print*," Error : Problem with size of initial subspace m0 (m0≤0 or m0>n) "
+            stop
+        case( 200 )
+            print*," Error : Problem with emin,emax (emin≥emax) "
+            stop
+        case(100:199)
+            print"(A,I4,A)"," Error : Problem with ",info-100,"-th value of the input Extended Eigensolver parameter (fpm(i)). Only the parameters in use are checked. "
+            Widmo_NoStates = 0
+            stop
+        case( 4 )
+            print*," Warning : Successful return of only the computed subspace after call withfpm(14) = 1 "
+            Widmo_NoStates = 0
+
+        case( 3 )
+            print*," Warning : Size of the subspace m0 is too small (m0<m) "
+            Widmo_NoStates = 0
+
+        case( 2 )
+            print*," Warning : No Convergence (number of iteration loops >fpm(4))"
+            Widmo_NoStates = 0
+        case( 1 )
+            print*," Warning : No eigenvalue found in the search interval. See remark below for further details. "
+            Widmo_NoStates = 0
+        case( 0 )
+            print*,               "---------------------------------------------"
+            print"(A,i12)",       "Widmo: Znaleziono stanow :",Widmo_NoStates
+            print"(A,e12.4)",     "       Z bledem epsout   :",epsout
+            print"(A,i12)",       "       W po liczbie iter.:",loop
+            print*,               "---------------------------------------------"
+        case( -1 )
+            print*," Error : Internal error for allocation memory. "
+            stop
+        case( -2 )
+            print*," Error : Internal error of the inner system solver. Possible reasons: not enough memory for inner linear system solver or inconsistent input. "
+            stop
+        case( -3 )
+            print*," Error : Internal error of the reduced eigenvalue solver Possible cause: matrix B may not be positive definite. It can be checked with LAPACK routines, if necessary."
+            stop
+        case(-199:-100)
+            print"(A,I4,A)"," Error : Problem with the ",-info-100,"-th argument of the Extended Eigensolver interface. "
+            stop
+        endselect
+
+        do i = 1 , Widmo_NoStates
+            print*,i, Evalues(i)*1000.0*Rd
+            YcY = sum(abs(EVectors(:,i))**2)*DX
+            EVectors(:,i) = EVectors(:,i)/sqrt(YcY)
+
+        enddo
+
+!        write(333,"(40f20.8)"),kvec*L2LR,Ef*1000.0*Rd,Evalues(1:Widmo_NoStates)*1000.0*Rd
+        do i = 1 , pN-2
+        write(112,"(40f20.8)"),i*2.0D0,abs(modek(i+1))**2,abs(EVectors(i,1:Widmo_NoStates))**2
+        enddo
+
+
+
+!
+!        ! -----------------------------------------------------------------
+!        ! Kopiowanie wynikow do odpowiednich tablic
+!        ! -----------------------------------------------------------------
+!
+!
+!        if(allocated(Widmo_Evals)) deallocate(Widmo_Evals)
+!        if(allocated(Widmo_Vecs))  deallocate(Widmo_Vecs)
+!
+!
+!
+!!        Widmo_NoStates = no_evals
+!        if(Widmo_NoStates > 0 ) then
+!            call oblicz_rozmiar_macierzy();
+!
+!            allocate(Widmo_Vecs(TRANS_MAXN,Widmo_NoStates))
+!            do i = 1 , nx
+!            do j = 1 , ny
+!                if(WINDEX(i,j) > 0) then
+!                    Widmo_Vecs(GINDEX(i,j),1:Widmo_NoStates) = EVectors(WINDEX(i,j),1:Widmo_NoStates)
+!                endif
+!            enddo
+!            enddo
+!
+!            allocate(Widmo_Evals(Widmo_NoStates))
+!            Widmo_Evals(1:Widmo_NoStates) = Evalues(1:Widmo_NoStates)
+!        endif
+!
+        deallocate(CMATA)
+        deallocate(IDXA)
+        deallocate(HBROWS)
+        deallocate(EVectors)
+        deallocate(Evalues)
+        deallocate(Rerrors)
+
+
+    end subroutine zrodlo_mode_from_kvec
+
+    subroutine modpop_convert_to_HB(no_vals,rows_cols,out_rows)
+          integer,intent(in)                  :: no_vals
+          integer,intent(in),dimension(:,:)  :: rows_cols
+          integer,intent(inout),dimension(:) :: out_rows
+          integer :: iterator, irow
+          integer :: i, n
+
+          n        = no_vals
+          iterator = 0
+          irow     = 0
+          do i = 1 , n
+              if( rows_cols(i,1) /= irow ) then
+                iterator = iterator + 1
+                out_rows(iterator) = i
+                irow = rows_cols(i,1)
+              endif
+          enddo
+          out_rows(iterator+1) = n + 1
+      end subroutine modpop_convert_to_HB
+
+
+
+
 
 
 END MODULE modpop
