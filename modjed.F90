@@ -19,6 +19,10 @@ MODULE modjed
     double precision  :: G_LAN ! czynnik landego
     double precision :: atomic_Ef   ! energia elektronu [meV]
     double precision :: atomic_Bz   ! polemagnetyczne w [T]
+    double precision :: atomic_Rashba   ! sprzezenie spin-orbita typu rashba [nm^2]
+    double precision :: atomic_LOC      ! sprzezenie spin-orbita typu lateral [nm^2]
+    double precision :: atomic_DX
+    double precision :: so_rashba,so_loc ! w jednostkach donorowych
 
     logical,parameter :: TRANS_DEBUG = .true.
 
@@ -38,7 +42,19 @@ MODULE modjed
     END ENUM
 
     contains
-
+    subroutine modjed_jaki_kierunek(kierunek)
+        integer :: kierunek
+        selectcase(kierunek)
+        case(ZRODLO_KIERUNEK_PRAWO)
+            print*,"    Kierunek= PRAWO -->"
+        case(ZRODLO_KIERUNEK_LEWO)
+            print*,"    Kierunek= LEWO <--"
+        case(ZRODLO_KIERUNEK_GORA)
+            print*,"    Kierunek= GORA -->"
+        case(ZRODLO_KIERUNEK_DOL)
+            print*,"    Kierunek= DOL <--"
+        endselect
+    endsubroutine modjed_jaki_kierunek
 
     subroutine modjed_ustaw_konwersje_jednostek(pM_EFF,pE_MAT)
         double precision,intent(in) :: pM_EFF
@@ -52,6 +68,9 @@ MODULE modjed
         L2LR      = M_EFF/E_MAT/A0
         LR2L      = 1.0/L2LR
         kbT       = 8.617D-5*Temp/Rd
+
+        so_rashba = atomic_Rashba * L2LR * L2LR
+        so_loc    = atomic_LOC * L2LR * L2LR
     end subroutine modjed_ustaw_konwersje_jednostek
 
 
