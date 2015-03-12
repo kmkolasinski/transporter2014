@@ -24,7 +24,7 @@ MODULE modjed
     double precision :: atomic_DX
     double precision :: so_rashba,so_loc ! w jednostkach donorowych
 
-    logical,parameter :: TRANS_DEBUG = .true.
+    logical,parameter :: TRANS_DEBUG = .false.
 
     ENUM,BIND(C)
         ENUMERATOR :: B_NORMAL          = 0 ! FLAGA OZNACZA ZE TO NIE JEST BRZEG
@@ -56,11 +56,26 @@ MODULE modjed
         endselect
     endsubroutine modjed_jaki_kierunek
 
+    subroutine modjed_ustaw_InGaAs()
+        ! na podstawie -- http://www.ioffe.ru/SVA/NSM/Semicond/GaInAs/
+        ! lande factor -- http://arxiv.org/pdf/1406.2848v1.pdf
+        ! http://journals.aps.org/prb/abstract/10.1103/PhysRevB.35.7729
+        G_LAN = -8.97
+        call modjed_ustaw_konwersje_jednostek(0.0465D0,12.0D0)
+    end subroutine modjed_ustaw_InGaAs
+
+    subroutine modjed_ustaw_InSb()
+        ! na podstawie pracy doktorskiej (colwiz zakladka SO)
+        G_LAN = -50.0
+        call modjed_ustaw_konwersje_jednostek(0.014D0,16.0D0)
+    end subroutine modjed_ustaw_InSb
+
     subroutine modjed_ustaw_konwersje_jednostek(pM_EFF,pE_MAT)
         double precision,intent(in) :: pM_EFF
         double precision,intent(in) :: pE_MAT
 
         print*,"Zmiana jednostek..."
+
         E_MAT     = pE_MAT
         M_EFF     = pM_EFF
         Temp      = 0.0
@@ -69,8 +84,11 @@ MODULE modjed
         LR2L      = 1.0/L2LR
         kbT       = 8.617D-5*Temp/Rd
 
-        so_rashba = atomic_Rashba * L2LR * L2LR
+        so_rashba = atomic_Rashba * L2LR  / 1000.0 / Rd
         so_loc    = atomic_LOC * L2LR * L2LR
+        print*,"Rashba  =",so_rashba," [donorowe]"
+        print*,"Lateral =",so_loc   ," [donorowe]"
+
     end subroutine modjed_ustaw_konwersje_jednostek
 
 

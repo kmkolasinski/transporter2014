@@ -1,6 +1,7 @@
 MODULE spinmodpop
     USE, INTRINSIC :: ISO_C_BINDING
     use            :: modjed
+    use            :: modutils
     implicit none
     private
 
@@ -213,14 +214,36 @@ subroutine spinmodpop_relacja_dyspersji(pkmin,pkmax,pdk,pEmax,nazwa_pliku)
     character(*) :: nazwa_pliku
     double precision :: kmin,kmax,dk,Emax
     complex*16 :: kvec
-    doubleprecision :: skank
-    integer :: i
+    doubleprecision :: skank, YA, YB, polaryzacje(1000,3) , energie(1000)
+    integer :: i, max_mods
+    complex*16 , dimension(:) , allocatable :: XYup , XYdwn , Zup , Zdwn
     open(unit = 12321, file= nazwa_pliku )
+    open(unit = 12322, file= nazwa_pliku(1:len(nazwa_pliku)-4)//"_polar_z.txt")
+    open(unit = 12323, file= nazwa_pliku(1:len(nazwa_pliku)-4)//"_polar_x.txt")
+    open(unit = 12324, file= nazwa_pliku(1:len(nazwa_pliku)-4)//"_polar_y.txt")
 
     kmax = pkmax*LR2L
     kmin = pkmin*LR2L
     dk   = pdk*LR2L
     Emax = pEmax/Rd/1000.0
+    allocate(XYup(N))
+    allocate(XYdwn(N))
+    allocate(Zup(N))
+    allocate(Zdwn(N))
+
+    kvec = II*0.0
+    call spinmodpop_utworz_hamiltonian(kvec)
+    ABSTOL = -1.0
+    !     Set VL, VU to compute eigenvalues in half-open (VL,VU] interval
+    VL = -Emax
+    VU = Emax
+    !
+    !     Solve eigenproblem.
+    !
+    CALL ZHEEVR( "V", 'Values', 'Lower', 2*N, Hamiltonian, 2*N, VL, VU, IL,&
+    &             IU, ABSTOL, M, W, Z, 2*N, ISUPPZ, WORK, LWORK, RWORK,&
+    &             LRWORK, IWORK, LIWORK, INFO )
+    max_mods = M
 
     do skank = kmin , kmax , dk
 
@@ -228,21 +251,58 @@ subroutine spinmodpop_relacja_dyspersji(pkmin,pkmax,pdk,pEmax,nazwa_pliku)
         call spinmodpop_utworz_hamiltonian(kvec)
         ABSTOL = -1.0
         !     Set VL, VU to compute eigenvalues in half-open (VL,VU] interval
-        VL = 0.0
+        VL = -Emax
         VU = Emax
         !
         !     Solve eigenproblem.
         !
-        CALL ZHEEVR( "N", 'Values', 'Lower', 2*N, Hamiltonian, 2*N, VL, VU, IL,&
+        W = 0
+        CALL ZHEEVR( "V", 'Values', 'Lower', 2*N, Hamiltonian, 2*N, VL, VU, IL,&
         &             IU, ABSTOL, M, W, Z, 2*N, ISUPPZ, WORK, LWORK, RWORK,&
         &             LRWORK, IWORK, LIWORK, INFO )
 
+        polaryzacje = -100
+        energie     = 0
+        do i = 1 , M
+            Zup  = 0
+            Zdwn = 0
+            Zup (1:N) = Z(1:N    ,i)
+            Zdwn(1:N) = Z(N+1:2*N,i)
+
+            ! Kierunek Z
+            YA = sum(abs(Zup)**2)
+            YB = sum(abs(Zdwn)**2)
+            polaryzacje(i,1) = (YA-YB)/(YA+YB) ! kierunek z
+
+            ! Kierunek X
+            YA = sum(abs(Zup+Zdwn)**2) ! up
+            YB = sum(abs(Zup-Zdwn)**2) ! down
+            polaryzacje(i,2) = (YA-YB)/(YA+YB) ! kierunek x
+
+            ! Kierunek Y
+            YA = sum(abs(Zup+II*Zdwn)**2)
+            YB = sum(abs(Zup-II*Zdwn)**2)
+            polaryzacje(i,3) = (YA-YB)/(YA+YB) ! kierunek y
+
+            energie(i) = W(i)*Rd*1000.0
+        enddo
 
 
-        write(12321,"(1000e20.10)"),skank*L2LR,M+0.0,W(1:M)*Rd*1000.0
+        write(12321,"(1000e20.10)"),skank*L2LR,atomic_Ef,M+0.0,energie(1:max_mods)
+        write(12322,"(1000e20.10)"),skank*L2LR,atomic_Ef,M+0.0,polaryzacje(1:max_mods,1)
+        write(12323,"(1000e20.10)"),skank*L2LR,atomic_Ef,M+0.0,polaryzacje(1:max_mods,2)
+        write(12324,"(1000e20.10)"),skank*L2LR,atomic_Ef,M+0.0,polaryzacje(1:max_mods,3)
 
     enddo
     close(12321)
+    close(12322)
+    close(12323)
+    close(12324)
+
+    deallocate(XYup)
+    deallocate(XYdwn)
+    deallocate(Zup)
+    deallocate(Zdwn)
 
 end subroutine spinmodpop_relacja_dyspersji
 
@@ -464,7 +524,7 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
     MA(2*N+1:2*N+N,N+1:2*N) = MatBs(:,:,1)
     MB(2*N+1:2*N+N,1:N)     = conjg(MatBS(:,:,1))
 
-
+!    print*,"Tworzenie macierzy=",get_clock()
 
 
 !    open(unit = 33345, file= "MA.txt" )
@@ -484,7 +544,7 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
 &   DUMMY, 1, Z, LDVR, WORK, LWORK, RWORK, INFO )
 
     LWORK = MIN(LWMAX, INT( WORK(1)))
-
+!    print*,"LMAX Query=",get_clock()
 
     ! rozwiazanie problemu wlasnego
     CALL ZGGEV("N","V", 4*N, MA, 4*N, MB , 4*N, ALPHA,BETA, &
@@ -496,6 +556,13 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
         stop
     endif
 
+!    print*,"Rozwiazanie rownania wlasnego=",get_clock()
+!do i = 1 , 4*N
+!if(abs(Beta(i))>1e-16) then
+!lambda = (ALPHA(i)/BETA(i))
+!    print*,i,abs(lambda),(log(lambda)/II/DX)
+!endif
+!enddo
 
     LICZBA_MODOW = 0
     do i = 1 , 4*N
@@ -519,48 +586,43 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
     enddo
 
 
-    if(LICZBA_MODOW == 0) return;
+
+
+   ! if(LICZBA_MODOW == 0) return;
 
     if(allocated(ChiMod ))    deallocate(ChiMod)
     if(allocated(ChiKvec))    deallocate(ChiKvec)
     if(allocated(ChiLambda))  deallocate(ChiLambda)
 
     allocate(ChiMod (2*(N+2),2*N,2))
-    allocate(ChiKvec(N,2))
-    allocate(ChiLambda(N,2))
+    allocate(ChiKvec(2*N,2))
+    allocate(ChiLambda(2*N,2))
 
 
-    ChiMod  = 0
-    ChiKvec = 0
-    ChiLambda = 0
+    ChiMod      = 0
+    ChiKvec     = 0
+    ChiLambda   = 0
     if( TRANS_DEBUG ) then
         print*,""
         print*,"WEKTORY FALOWE (IN/OUT):"
     endif
     num_in  = 0
     num_out = 0
-    ! wektory ze spinem up
 
+    ! szukamy spinorow
     do i = 1 , 4*N
-        ! spin up - bierzemy pierwsza polowe rozwiazani
-
         if(abs(Beta(i))>1e-16) then
             lambda = (ALPHA(i)/BETA(i))
 
             if(  abs(abs(lambda) - 1.0) < 1.0E-6 ) then
                 kvec         = (log(lambda)/DX)
 
-!                tmp_vec(1:N) =  matmul(conjg(Mtau(:,:,1)),Z(N+1:2*N,i))
-!                dkvec        = -IMAG(lambda*sum(conjg(Z(N+1:2*N,i))*tmp_vec(1:N)))
-!
-!                tmp_vec(1:N) =  matmul(conjg(Mtau(:,:,2)),Z(2*N+N+1:2*N+2*N,i))
-!                dkvec        = dkvec - IMAG(lambda*sum(conjg(Z(2*N+N+1:2*N+2*N,i))*tmp_vec(1:N)))
-!
+
                 dkvec = (log(lambda)/II/DX)
 
                 dkvec = spinmodpop_calc_current(dkvec,Z(N+1:2*N,i),Z(2*N+N+1:2*N+2*N,i),N)
 !                dkvec = spinmodpop_calc_TB_current(dkvec,Z(N+1:2*N,i),Z(2*N+N+1:2*N+2*N,i),N)
-!                dkvec = dble(kvec)
+
                 if( dkvec > 0) then
                     num_in                   = num_in + 1
 
@@ -623,83 +685,102 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
     endif ! end of if(TRANS_DEBUG)
 
 
-!
-!        do i = 2*N , 1 , -1
-!            if(abs(Beta(i))>1e-16) then
-!                lambda= (ALPHA(i)/BETA(i))
-!                kvec  = (log(lambda)/DX)
-!
-!                if( abs(lambda) > 1 + 1E-6 ) then
-!                    num_out                  = num_out + 1
+        do i = 4*N , 1 , -1
+            if(abs(Beta(i))>1e-16) then
+                lambda= (ALPHA(i)/BETA(i))
+                kvec  = (log(lambda)/DX)
+
+                if( abs(lambda) > 1 + 1E-6 ) then
+                    num_out                  = num_out + 1
 !                    K_m_out(num_out)         = kvec
 !                    Chi_m_out(2:N+1,num_out) = Z(N+1:2*N,i)
 !                    YcY                      = sum(abs(Chi_m_out(:,num_out))**2)*DX
 !                    Chi_m_out(:,num_out)     = Chi_m_out(:,num_out)/sqrt(YcY)
-!                endif
-!            endif ! end of if beta
-!        enddo
-!
-!        do i = 1 , 2*N
-!            if(abs(Beta(i))>1e-16) then
-!                lambda= (ALPHA(i)/BETA(i))
-!                kvec  = (log(lambda)/DX)
-!!                print*,i,kvec*L2LR
-!                if(  abs(lambda) < 1 - 1E-6 ) then
-!
-!                    num_in                   = num_in + 1
+
+                    ChiKvec(num_out,2)         = kvec
+                    ChiLambda(num_out,2)       = lambda
+
+                    ChiMod(2  :N+1,num_out,2)   = Z(N+1:2*N,i)
+                    ChiMod(N+4:2*N+3,num_out,2) = Z(2*N+N+1:2*N+2*N,i)
+
+                    YcY                         = sum(abs(ChiMod(:,num_out,2))**2)*DX
+                    ChiMod(:,num_out,2)         = ChiMod(:,num_out,2)/sqrt(YcY)
+
+                endif
+            endif ! end of if beta
+        enddo
+
+        do i = 1 , 4*N
+            if(abs(Beta(i))>1e-16) then
+                lambda= (ALPHA(i)/BETA(i))
+                kvec  = (log(lambda)/DX)
+!                print*,i,kvec*L2LR
+                if(  abs(lambda) < 1 - 1E-6 ) then
+
+                    num_in                   = num_in + 1
 !                    K_M_IN(num_in)           = kvec
 !                    Chi_M_IN(2:N+1,num_in)   = Z(N+1:2*N,i)
 !                    YcY                      = sum(abs(Chi_M_IN(:,num_in))**2)*DX
 !                    Chi_M_IN(:,num_in)       = Chi_M_IN(:,num_in)/sqrt(YcY)
-!                endif
-!            endif ! end of if beta
-!        enddo
+
+
+                    ChiKvec(num_in,1)          = kvec
+                    ChiLambda(num_in,1)        = lambda
+                    ChiMod(2  :N+1,num_in,1)   = Z(N+1:2*N,i)
+                    ChiMod(N+4:2*N+3,num_in,1) = Z(2*N+N+1:2*N+2*N,i)
+
+                    YcY                    = sum(abs(ChiMod(:,num_in,1))**2)*DX
+                    ChiMod(:,num_in,1)     = ChiMod(:,num_in,1)/sqrt(YcY)
+
+
+                endif
+            endif ! end of if beta
+        enddo
+
+    call spinmodpop_sort_vectors_by_values(ChiMod(:,LICZBA_MODOW+1:2*N,1),ChiKvec(LICZBA_MODOW+1:2*N,1),ChiLambda(LICZBA_MODOW+1:2*N,1),+1,1)
+    call spinmodpop_sort_vectors_by_values(ChiMod(:,LICZBA_MODOW+1:2*N,2),ChiKvec(LICZBA_MODOW+1:2*N,2),ChiLambda(LICZBA_MODOW+1:2*N,2),-1,1)
+
+
 !
 !        call modpop_sort_vectors_by_values(Chi_M_IN (:,LICZBA_MODOW+1:N),K_M_IN (LICZBA_MODOW+1:N),-1,1)
 !        call modpop_sort_vectors_by_values(Chi_M_OUT(:,LICZBA_MODOW+1:N),K_M_OUT(LICZBA_MODOW+1:N),-1,1)
 !
-!        LICZBA_MODOW_EVANESCENTYCH = 0
-!        ! bierzemy tylko te mody ktore nie maja czesci falowej (tj tylko czyste evanescentne exp(+/-kx))
-!        do i = LICZBA_MODOW + 1 , N
-!            !if( abs(imag(K_M_OUT(i))) < 1.0E-6 .and. abs(imag(K_M_IN(i))) < 1.0E-6 .and. &
-!            ! &  abs(dble(K_M_OUT(i))) > 1.0E-6 .and. abs(dble(K_M_IN(i))) > 1.0E-6  ) then
-!                LICZBA_MODOW_EVANESCENTYCH = LICZBA_MODOW_EVANESCENTYCH + 1
-!!                Chi_M_IN (:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_IN(:,i)
-!!                K_M_IN   (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_IN(i)
-!!!
-!!                Chi_M_OUT(:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_OUT(:,i)
-!!                K_M_OUT  (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_OUT(i)
-!
-!                Chi_M_OUT(:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_IN(:,i)
-!                K_M_OUT  (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = -K_M_IN(i)
-!                call modpop_calc_mode_from_k((K_M_OUT(i)),Chi_m_out(:,i),DX,N+2,Ef,BZ,Uvec,pbHorizontal);
-!           !endif
-!
-!        enddo
-!        LICZBA_MODOW_EVANESCENTYCH = 1*LICZBA_MODOW_EVANESCENTYCH/8
-!
-!        !i = 3
-!        !call modpop_calc_mode_from_k((K_M_IN(i)),Chi_m_out(:,i),DX,N+2,Ef,BZ,Uvec,pbHorizontal);
-!
-!!        call zrodlo_mode_from_kvec(K_M_IN(i),N+2,UVEC,Chi_M_IN(:,i))
-!!        open(unit = 333, file= "evan.txt" )
-!!        do dkvec = -3.14159/DX/10 , 3.14159/DX/10 , 0.01
-!!            K_M_IN(i) = - II * CMPLX(0.0D0,dkvec)
-!!            call zrodlo_mode_from_kvec(K_M_IN(i),N+2,UVEC,Chi_M_IN(:,i))
-!!        enddo
-!
-!
-!!        if ( TRANS_DEBUG ) then
-!!        print*,"-------------------------------------------------------------"
-!!        print*," K evan.  :         Input mod.      |         Output mod."
-!!        print*,"-------------------------------------------------------------"
-!!        do i = LICZBA_MODOW + 1 , LICZBA_MODOW_EVANESCENTYCH + LICZBA_MODOW
-!!             print"(A,i4,A,2f12.6,A,2f12.6)","K[",i,"][nm]:",K_M_IN(i)*L2LR," | ",K_M_OUT(i)*L2LR
-!!        enddo
-!!        print*,"-------------------------------------------------------------"
-!!        endif
-!
-!
+        LICZBA_MODOW_EVANESCENTYCH = 0
+        ! bierzemy tylko te mody ktore nie maja czesci falowej (tj tylko czyste evanescentne exp(+/-kx))
+        do i = LICZBA_MODOW + 1 , 2*N
+            !if( abs(imag(K_M_OUT(i))) < 1.0E-6 .and. abs(imag(K_M_IN(i))) < 1.0E-6 .and. &
+            ! &  abs(dble(K_M_OUT(i))) > 1.0E-6 .and. abs(dble(K_M_IN(i))) > 1.0E-6  ) then
+                LICZBA_MODOW_EVANESCENTYCH = LICZBA_MODOW_EVANESCENTYCH + 1
+!                Chi_M_IN (:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_IN(:,i)
+!                K_M_IN   (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_IN(i)
+!!
+!                Chi_M_OUT(:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_OUT(:,i)
+!                K_M_OUT  (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = K_M_OUT(i)
+
+                !Chi_M_OUT(:,LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH) = Chi_M_IN(:,i)
+                !K_M_OUT  (LICZBA_MODOW + LICZBA_MODOW_EVANESCENTYCH)   = -K_M_IN(i)
+                !call modpop_calc_mode_from_k((K_M_OUT(i)),Chi_m_out(:,i),DX,N+2,Ef,BZ,Uvec,pbHorizontal);
+           !endif
+
+        enddo
+        LICZBA_MODOW_EVANESCENTYCH = 1*LICZBA_MODOW_EVANESCENTYCH/4
+        print*,"NOWAN=",LICZBA_MODOW_EVANESCENTYCH
+        if ( TRANS_DEBUG .or. .true. ) then
+        print*,"-------------------------------------------------------------"
+        print*," K evan.  :         Input mod.      |         Output mod."
+        print*,"-------------------------------------------------------------"
+
+        do i =  LICZBA_MODOW + 1 , LICZBA_MODOW_EVANESCENTYCH + LICZBA_MODOW
+
+             iter = 2*(N+2)
+             polarA = sum(conjg(ChiMod(1:iter/2,i,1))*ChiMod(1:iter/2,i,1)) - sum(conjg(ChiMod(iter/2+1:iter,i,1))*ChiMod(iter/2+1:iter,i,1))
+             polarB = sum(conjg(ChiMod(1:iter/2,i,2))*ChiMod(1:iter/2,i,2)) - sum(conjg(ChiMod(iter/2+1:iter,i,2))*ChiMod(iter/2+1:iter,i,2))
+             print"(A,i4,A,3f10.4,A,3f10.4)","K[",i,"][nm]:",ChiKvec(i,1)*L2LR,dble(polarA)*DX," | ",ChiKvec(i,2)*L2LR,dble(polarB)*DX
+        enddo
+        print*,"-------------------------------------------------------------"
+        endif
+
+
 
 
     deallocate(Uvec       )
