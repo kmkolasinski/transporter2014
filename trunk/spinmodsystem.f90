@@ -1,5 +1,7 @@
 module modspinsystem
     use modspinzrodlo
+    use modjed
+    use modutils
     implicit none
     private
 
@@ -27,9 +29,10 @@ module modspinsystem
     integer,dimension(:,:),allocatable            :: IDXA   ! INDEKSY MACIERZY (ROW,COL)
     complex*16,dimension(:),allocatable           :: VPHI   ! SZUKANA FUNKCJA FALOWA, PRZELICZANA POTEM NA LDOS
     complex*16,dimension(:,:,:),allocatable       :: PHI   ! FUNKCJA FALOWA ZAPISANA NA DWUWYMIAROWEJ MACIERZY
-    double precision,dimension(:,:), allocatable  :: CURRENT,CURRENTX,CURRENTY! FUNKCJA GESTOSCI PRADU PRAWDOPODOBIENSTWA
-    double precision,dimension(:,:,:), allocatable  :: RASHBA_CURRENT! FUNKCJA GESTOSCI PRADU PRAWDOPODOBIENSTWA (x,y,kierunek)
-    double precision,dimension(:,:,:), allocatable  :: LATERAL_CURRENT! FUNKCJA GESTOSCI PRADU PRAWDOPODOBIENSTWA (x,y,kierunek)
+    double precision,dimension(:,:,:), allocatable:: CURRENT! FUNKCJA GESTOSCI PRADU PRAWDOPODOBIENSTWA
+    double precision,dimension(:,:,:), allocatable:: CURRENTXY ! WETOR GESTOSCI PRADU PRAWDO
+    double precision,dimension(:,:)  , allocatable:: DIVJ ! DYWERGENCJA WEKTORA J
+    double precision,dimension(:,:,:), allocatable:: POLARYZACJE ! ZAWIERA LOKALNE POLARYZACJE SPINOWE (x,y,z)
 !    complex*16,dimension(:,:,:),allocatable       :: WAVEFUNC  ! FUNKCJA FALOWA ZAPISANA NA DWUWYMIAROWEJ MACIERZY, TRZECIA KOLUMNA TO N-TY MOD
 
     ! Problem wlasny
@@ -44,20 +47,24 @@ module modspinsystem
         ENUMERATOR :: ZAPISZ_KONTUR      = 2
         ENUMERATOR :: ZAPISZ_INDEKSY     = 3
         ENUMERATOR :: ZAPISZ_PHI         = 4
-        ENUMERATOR :: ZAPISZ_J           = 5
+        ENUMERATOR :: ZAPISZ_J_ALL       = 5
+        ENUMERATOR :: ZAPISZ_J_TOTAL     = 10
+        ENUMERATOR :: ZAPISZ_DIVJ        = 11
+        ENUMERATOR :: ZAPISZ_POLARYZACJE = 12
         ENUMERATOR :: ZAPISZ_WAVEFUNC    = 6
         ENUMERATOR :: ZAPISZ_STANY_WLASNE= 7
         ENUMERATOR :: ZAPISZ_WIDMO_VRTCAL= 8
         ENUMERATOR :: ZAPISZ_WIDMO_HRZNTL= 9
     END ENUM
 
-    public :: ZAPISZ_FLAGI , ZAPISZ_POTENCJAL , ZAPISZ_KONTUR , ZAPISZ_INDEKSY , ZAPISZ_PHI , ZAPISZ_J , ZAPISZ_WAVEFUNC
+    public :: ZAPISZ_FLAGI , ZAPISZ_POTENCJAL , ZAPISZ_KONTUR , ZAPISZ_INDEKSY , ZAPISZ_PHI
+    public :: ZAPISZ_J_ALL, ZAPISZ_DIVJ, ZAPISZ_J_TOTAL, ZAPISZ_WAVEFUNC , ZAPISZ_POLARYZACJE
     public :: zrodla, UTOTAL, GFLAGS, GINDEX !,PHI
     public :: spinsystem_inicjalizacja , spinsystem_zwalnienie_pamieci , spinsystem_inicjalizacja_ukladu
 !    public :: system_dodaj_abs_zrodlo !(pY1,pYN,pX1,pEf,pKierunek)
     public :: spinsystem_zapisz_do_pliku , spinsystem_rozwiaz_problem
-!    public :: system_gauss , system_dodaj_lorentza , system_dodaj_pionowy_slupek_potencjalu
-!    public :: system_fermi, system_fermiT , system_dfermidE
+    public :: spinsystem_gauss, spinsystem_dodaj_lorentza, spinsystem_dodaj_pionowy_slupek_potencjalu
+    public :: spinsystem_fermi, spinsystem_fermiT, spinsystem_dfermidE
 !    public :: system_widmo,system_zapisz_widmo_do_pliku,Widmo_NoStates,Widmo_Evals,Widmo_Vecs
 !    public :: ZAPISZ_STANY_WLASNE , ZAPISZ_WIDMO_VRTCAL , ZAPISZ_WIDMO_HRZNTL
 !    public :: TRANS_T,TRANS_R
@@ -95,11 +102,11 @@ module modspinsystem
         allocate(    PHI(nx,ny,-1:1))
         allocate(    DEX(nx,ny))
         allocate(    DEY(nx,ny))
-        allocate(CURRENT (nx,ny))
-        allocate(CURRENTX(nx,ny))
-        allocate(CURRENTY(nx,ny))
-        allocate(RASHBA_CURRENT(nx,ny,2))
-        allocate(LATERAL_CURRENT(nx,ny,2))
+        allocate(CURRENT(nx,ny,5))
+        allocate(DIVJ(nx,ny))
+        allocate(CURRENTXY(nx,ny,2))
+        allocate(POLARYZACJE(nx,ny,3))
+
 
         GFLAGS = B_NORMAL
         ZFLAGS = 0
@@ -170,10 +177,9 @@ module modspinsystem
         if(allocated(UTOTAL))   deallocate(UTOTAL)
         if(allocated(DUTOTAL))  deallocate(DUTOTAL)
         if(allocated(CURRENT))  deallocate(CURRENT)
-        if(allocated(CURRENTX)) deallocate(CURRENTX)
-        if(allocated(CURRENTY)) deallocate(CURRENTY)
-        if(allocated(LATERAL_CURRENT)) deallocate(LATERAL_CURRENT)
-        if(allocated(RASHBA_CURRENT))  deallocate(RASHBA_CURRENT)
+        if(allocated(CURRENTXY))deallocate(CURRENTXY)
+        if(allocated(POLARYZACJE))deallocate(POLARYZACJE)
+        if(allocated(DIVJ))     deallocate(DIVJ)
         if(allocated(PHI))      deallocate(PHI)
         if(allocated(DEX))      deallocate(DEX)
         if(allocated(DEY))      deallocate(DEY)
@@ -336,7 +342,8 @@ module modspinsystem
         integer,intent(in)  :: nrz
         double precision,dimension(:,:), allocatable  :: TR_MAT
         integer,allocatable :: HBROWS(:)
-
+        doubleprecision :: YA, YB
+        complex*16 ::  Zup , Zdwn
         integer :: i,j,ni,nj,mod_in,dir
 
         Ef  = atomic_Ef/1000.0/Rd
@@ -350,8 +357,11 @@ module modspinsystem
         print*,"! ----------------------------------------------- !"
 
 
-
+        call reset_clock()
         call oblicz_rozmiar_macierzy()
+!        print*,"Oblicz rozmiar macierzy:", get_clock()
+        call reset_clock()
+
 
         allocate(CMATA(MATASIZE))
         allocate(IDXA (MATASIZE,2))
@@ -365,12 +375,10 @@ module modspinsystem
         allocate(TR_MAT(no_zrodel,zrodla(nrz)%liczba_modow))
         TR_MAT = 0
         CURRENT = 0;
-        CURRENTX = 0;
-        CURRENTY = 0;
-        RASHBA_CURRENT = 0
-        LATERAL_CURRENT= 0
+        DIVJ    = 0
+        CURRENTXY = 0
+        POLARYZACJE = 0
         PHI     = 0
-
         TRANS_R = 0
         TRANS_T = 0
 
@@ -399,8 +407,11 @@ module modspinsystem
         ! --------------------------------------------------------------------
         call wypelnij_macierz()
         call convert_to_HB(MATASIZE,IDXA,HBROWS)
+!        print*,"Tworzenie macierzy:", get_clock()
+        call reset_clock()
         call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,1)
-
+!        print*,"Pierwszy solve:", get_clock()
+        call reset_clock()
 
         mod_in = 1
         do mod_in = 1 , zrodla(nrz)%liczba_modow
@@ -413,58 +424,50 @@ module modspinsystem
             nj = zrodla(nrz)%polozenia(i,2)
             dir = zrodla(nrz)%dir
 
-            VPHI(GINDEX(ni,nj,+1)) = -zrodla(nrz)%Fj(i,+1)*( Tu(-dir,+1,ni,nj) + Su(-dir,+1,ni,nj))
-            VPHI(GINDEX(ni,nj,-1)) = -zrodla(nrz)%Fj(i,-1)*( Tu(-dir,-1,ni,nj) + Su(-dir,-1,ni,nj))
-
+            VPHI(GINDEX(ni,nj,+1)) = -( zrodla(nrz)%Fj(i,+1)*Tu(-dir,+1,ni,nj) + zrodla(nrz)%Fj(i,-1)*Su(-dir,-1,ni,nj))
+            VPHI(GINDEX(ni,nj,-1)) = -( zrodla(nrz)%Fj(i,+1)*Su(-dir,+1,ni,nj) + zrodla(nrz)%Fj(i,-1)*Tu(-dir,-1,ni,nj))
         enddo
 
-        call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,2)
 
+
+        call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,2)
         call system_oblicz_J()
+        call oblicz_TR(nrz,mod_in)
+
+        do i = 1 ,no_zrodel
+            TR_MAT(i,mod_in) = sum( abs(zrodla(i)%TR(1:zrodla(i)%liczba_modow,-zrodla(i)%dir)) )
+        enddo
 
         do i = 1 , Nx
         do j = 1 , Ny
             if(GINDEX(i,j,+1) > 0) PHI(i,j,+1) = PHI(i,j,+1) + abs( VPHI(GINDEX(i,j,+1)) )**2
             if(GINDEX(i,j,-1) > 0) PHI(i,j,-1) = PHI(i,j,-1) + abs( VPHI(GINDEX(i,j,-1)) )**2
 
-!            if(GINDEX(i,j) > 0) WAVEFUNC(i,j,mod_in) = VPHI(GINDEX(i,j))
+            if(GINDEX(i,j,+1) > 0) then
+            Zup  = VPHI(GINDEX(i,j,+1))
+            Zdwn = VPHI(GINDEX(i,j,-1))
+            ! Kierunek Z
+            YA = (abs(Zup)**2)
+            YB = (abs(Zdwn)**2)
+            POLARYZACJE(i,j,1) = POLARYZACJE(i,j,1) + (YA-YB)!/(YA+YB) ! kierunek z
+
+            ! Kierunek X
+            YA = (abs(Zup+Zdwn)**2) ! up
+            YB = (abs(Zup-Zdwn)**2) ! down
+            POLARYZACJE(i,j,2) = POLARYZACJE(i,j,2) + (YA-YB)!/(YA+YB) ! kierunek x
+
+            ! Kierunek Y
+            YA = (abs(Zup+II*Zdwn)**2)
+            YB = (abs(Zup-II*Zdwn)**2)
+            POLARYZACJE(i,j,3) = POLARYZACJE(i,j,3) + (YA-YB)!/(YA+YB) ! kierunek y
+            endif
+!            if(GINDEX(i,j) > 0) WAVEF  UNC(i,j,mod_in) = VPHI(GINDEX(i,j))
         enddo
         enddo
 
 
         enddo ! end of petla po modach
-!        do mod_in = 1 , zrodla(nrz)%liczba_modow
-!
-!            zrodla(nrz)%ck(:)      = 0
-!            zrodla(nrz)%ck(mod_in) = 1
-!
-!            call zrodla(nrz)%zrodlo_oblicz_Fj(dx)
-!            VPHI = 0
-!            do i = 2 , zrodla(nrz)%N - 1
-!                ni = zrodla(nrz)%polozenia(i,1)
-!                nj = zrodla(nrz)%polozenia(i,2)
-!                VPHI(GINDEX(ni,nj)) = zrodla(nrz)%Fj(i)
-!            enddo
-!
-!            call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,2)
-!
-!            call oblicz_TR(nrz,mod_in)
-!            call system_oblicz_J()
-!
-!            do i = 1 ,no_zrodel
-!                TR_MAT(i,mod_in) = sum(abs(zrodla(i)%Jout(:)) )
-!            enddo
-!
-!            WAVEFUNC(:,:,mod_in) = 0
-!            do i = 1 , Nx
-!            do j = 1 , Ny
-!                if(GINDEX(i,j) > 0) PHI(i,j) = PHI(i,j) + abs( VPHI(GINDEX(i,j)) )**2
-!
-!                if(GINDEX(i,j) > 0) WAVEFUNC(i,j,mod_in) = VPHI(GINDEX(i,j))
-!            enddo
-!            enddo
-!
-!        enddo ! end of petla po modach
+
 
         print*,"T = ", TRANS_T
         print*,"R = ", TRANS_R
@@ -641,19 +644,20 @@ module modspinsystem
                     !
                     ! ------------------------------------------------------------------
                     case (ZRODLO_KIERUNEK_PRAWO,ZRODLO_KIERUNEK_LEWO)
+
                         ln   = v - zrodla(nzrd)%polozenia(1,2) + 1 ! lokalny indeks
 
-                        cmatA(itmp)   = Tu(+dir,+s,u,v) + Tu(-dir,+s,u,v)
-                        idxA (itmp,1) = GINDEX(u  ,v,+s)
+                        cmatA(itmp)   = (Tu(+dir,+s,u,v) + Tu(-dir,+s,u,v))
+!                        if( ZRODLO_KIERUNEK_PRAWO == zrodla(nzrd)%bKierunek ) cmatA(itmp)  = 0.0
+                        idxA (itmp,1) = GINDEX(u    ,v,+s)
                         idxA (itmp,2) = GINDEX(u+dir,v,+s)
                         itmp = itmp + 1
 
-                        cmatA(itmp)   = Su(+dir,-s,u,v) + Su(-dir,-s,u,v)
-                        idxA (itmp,1) = GINDEX(u  ,v,+s)
+                        cmatA(itmp)   = (Su(+dir,-s,u,v) + Su(-dir,-s,u,v))
+!                        if( ZRODLO_KIERUNEK_PRAWO == zrodla(nzrd)%bKierunek ) cmatA(itmp)  = 0.0
+                        idxA (itmp,1) = GINDEX(u    ,v,+s)
                         idxA (itmp,2) = GINDEX(u+dir,v,-s)
                         itmp = itmp + 1
-
-
 
                     ! ------------------------------------------------------------------
                     ! Zrodla dolne:
@@ -705,6 +709,10 @@ module modspinsystem
                                 zrodla(nzrd)%Sigma(ln,nn,+s,+s)*Tu(-dir,+s,u,v) + &
                                 zrodla(nzrd)%Sigma(ln,nn,-s,+s)*Su(-dir,-s,u,v)
 
+
+
+!                        if( ZRODLO_KIERUNEK_PRAWO == zrodla(nzrd)%bKierunek ) cmatA(itmp)  = 1.0
+
                         idxA (itmp,1) = GINDEX(ni,nj ,+s)
                         idxA (itmp,2) = GINDEX(ni,pnj,+s)
                         itmp = itmp + 1
@@ -714,6 +722,8 @@ module modspinsystem
                             zrodla(nzrd)%Sigma(ln,nn,+s,-s)*Tu(-dir,+s,u,v) + &
                             zrodla(nzrd)%Sigma(ln,nn,-s,-s)*Su(-dir,-s,u,v)
 
+
+!                        if( ZRODLO_KIERUNEK_PRAWO == zrodla(nzrd)%bKierunek ) cmatA(itmp)  = 0.0
                         idxA(itmp,1) = GINDEX(ni,nj ,+s)
                         idxA(itmp,2) = GINDEX(ni,pnj,-s)
                         itmp = itmp + 1
@@ -725,6 +735,8 @@ module modspinsystem
                                 zrodla(nzrd)%Sigma(ln,nn,-s,+s)*Su(-dir,-s,u,v)
 
 
+!                        if( ZRODLO_KIERUNEK_PRAWO == zrodla(nzrd)%bKierunek ) cmatA(itmp)  = 0.0
+
                         idxA(itmp,1) = GINDEX(ni,nj ,+s)
                         idxA(itmp,2) = GINDEX(ni,pnj,+s)
                         itmp = itmp + 1
@@ -734,6 +746,9 @@ module modspinsystem
                         cmatA(itmp)  = Sv(+1,-s,u,v) + &
                             zrodla(nzrd)%Sigma(ln,nn,+s,-s)*Tu(-dir,+s,u,v) + &
                             zrodla(nzrd)%Sigma(ln,nn,-s,-s)*Su(-dir,-s,u,v)
+
+
+!                        if( ZRODLO_KIERUNEK_PRAWO == zrodla(nzrd)%bKierunek ) cmatA(itmp)  = 0.0
 
                         idxA(itmp,1) = GINDEX(ni,nj ,+s)
                         idxA(itmp,2) = GINDEX(ni,pnj,-s)
@@ -746,6 +761,9 @@ module modspinsystem
                                 zrodla(nzrd)%Sigma(ln,nn,+s,+s)*Tu(-dir,+s,u,v) + &
                                 zrodla(nzrd)%Sigma(ln,nn,-s,+s)*Su(-dir,-s,u,v)
 
+
+!                        if( ZRODLO_KIERUNEK_PRAWO == zrodla(nzrd)%bKierunek ) cmatA(itmp)  = 0.0
+
                         idxA(itmp,1) = GINDEX(ni,nj ,+s)
                         idxA(itmp,2) = GINDEX(ni,pnj,+s)
                         itmp = itmp + 1
@@ -753,6 +771,9 @@ module modspinsystem
                         cmatA(itmp)  = Sv(-1,-s,u,v) + &
                             zrodla(nzrd)%Sigma(ln,nn,+s,-s)*Tu(-dir,+s,u,v) + &
                             zrodla(nzrd)%Sigma(ln,nn,-s,-s)*Su(-dir,-s,u,v)
+
+
+!                        if( ZRODLO_KIERUNEK_PRAWO == zrodla(nzrd)%bKierunek ) cmatA(itmp)  = 0.0
 
                         idxA(itmp,1) = GINDEX(ni,nj ,+s)
                         idxA(itmp,2) = GINDEX(ni,pnj,-s)
@@ -763,6 +784,9 @@ module modspinsystem
                                 zrodla(nzrd)%Sigma(ln,nn,+s,+s)*Tu(-dir,+s,u,v) + &
                                 zrodla(nzrd)%Sigma(ln,nn,-s,+s)*Su(-dir,-s,u,v)
 
+
+!                        if( ZRODLO_KIERUNEK_PRAWO == zrodla(nzrd)%bKierunek ) cmatA(itmp)  = 0.0
+
                         idxA(itmp,1) = GINDEX(ni,nj ,+s)
                         idxA(itmp,2) = GINDEX(ni,pnj,+s)
                         itmp = itmp + 1
@@ -770,6 +794,9 @@ module modspinsystem
                         cmatA(itmp)  = &
                             zrodla(nzrd)%Sigma(ln,nn,+s,-s)*Tu(-dir,+s,u,v) + &
                             zrodla(nzrd)%Sigma(ln,nn,-s,-s)*Su(-dir,-s,u,v)
+
+
+!                        if( ZRODLO_KIERUNEK_PRAWO == zrodla(nzrd)%bKierunek ) cmatA(itmp)  = 0.0
 
                         idxA(itmp,1) = GINDEX(ni,nj ,+s)
                         idxA(itmp,2) = GINDEX(ni,pnj,-s)
@@ -871,41 +898,47 @@ module modspinsystem
 
 
     end subroutine wypelnij_macierz
-!
-!    ! -------------------------------------------------------------------
-!    ! Procedura oblicza prawdopodobienstwo przejscia T oraz odbicia R
-!    ! dla podanego zrodla wejsciowego nrz i danego modu wchodzacego mod_in
-!    ! -------------------------------------------------------------------
-!    subroutine oblicz_TR(nrz,mod_in)
-!        integer,intent(in) :: nrz,mod_in
-!        integer :: i
-!        doubleprecision :: Jin
-!        ! obliczamy apliduty prawdopodobienstwa
-!        do i = 1 , no_zrodel
-!            call zrodla(i)%zrodlo_oblicz_dk(VPHI,GINDEX,dx)
-!            !call zrodla(i)%zrodlo_wypisz_ckdk()
-!        enddo
-!        ! na podstawie amplitud prawdopodobienstwa obliczamy strumienie
-!        do i = 1 , no_zrodel
-!            call zrodla(i)%zrodlo_oblicz_JinJout(dx)
-!        enddo
-!
-!        ! na podstawie strumieni obliczamy transmisje oraz prawdopodobienstwo odbicia
-!        Jin = zrodla(nrz)%Jin(mod_in)
-!        do i = 1 , no_zrodel
-!            zrodla(i)%Jin(:)  = zrodla(i)%Jin(:)   / Jin
-!            zrodla(i)%Jout(:) = zrodla(i)%Jout(:)  / Jin
-!            call zrodla(i)%zrodlo_wypisz_JinJout()
-!        enddo
-!
-!        TRANS_R = TRANS_R + sum( abs(zrodla(nrz)%Jout(:)) )
-!        !TRANS_T = 0
-!        do i = 1 ,no_zrodel
-!            if(i /= nrz) TRANS_T = TRANS_T + sum( abs(zrodla(i)%Jout(:)) )
-!        enddo
-!
-!
-!    end subroutine oblicz_TR
+
+    ! -------------------------------------------------------------------
+    ! Procedura oblicza prawdopodobienstwo przejscia T oraz odbicia R
+    ! dla podanego zrodla wejsciowego nrz i danego modu wchodzacego mod_in
+    ! -------------------------------------------------------------------
+    subroutine oblicz_TR(nrz,mod_in)
+        integer,intent(in) :: nrz,mod_in
+        integer :: i,no_modes,dir
+        doubleprecision :: Jin
+
+
+        ! obliczamy apliduty prawdopodobienstwa
+        do i = 1 , no_zrodel
+            call zrodla(i)%spinzrodlo_oblicz_dk(VPHI,GINDEX,nx,ny)
+        enddo
+
+
+        ! na podstawie strumieni obliczamy transmisje oraz prawdopodobienstwo odbicia
+        Jin = zrodla(nrz)%ChiCurr(mod_in,zrodla(nrz)%dir)
+        call zrodla(nrz)%spinzrodlo_wypisz_JinJout()
+
+
+        do i = 1 , no_zrodel
+             zrodla(i)%TR = 0
+             no_modes = zrodla(i)%liczba_modow
+             dir = zrodla(i)%dir
+             zrodla(i)%TR(1:no_modes,+dir) = abs(zrodla(i)%ck(1:no_modes))**2 * zrodla(i)%ChiCurr(1:no_modes,+dir) / Jin
+             zrodla(i)%TR(1:no_modes,-dir) = abs(zrodla(i)%dk(1:no_modes))**2 * zrodla(i)%ChiCurr(1:no_modes,-dir) / Jin
+
+        enddo
+
+        TRANS_R = TRANS_R + sum( abs(zrodla(nrz)%TR(1:zrodla(nrz)%liczba_modow,-zrodla(nrz)%dir)) )
+
+        do i = 1 ,no_zrodel
+            dir = zrodla(i)%dir
+            no_modes = zrodla(i)%liczba_modow
+            if(i /= nrz) TRANS_T = TRANS_T + sum( abs(zrodla(i)%TR(1:no_modes,-dir)) )
+        enddo
+
+
+    end subroutine oblicz_TR
     ! -------------------------------------------------------------------
     ! Zwraca wartosc rozkladu gaussa w punkcie (x,y) dla gaussa o srodku
     ! w (xpos,ypos) oraz sigmie = sigma i amplidudzie = amplitude.
@@ -956,7 +989,7 @@ module modspinsystem
         do j = 1 , NY
             x = i*atomic_DX
             y = j*atomic_DX
-            UTOTAL(i,j) = UTOTAL(i,j) + dU/( 1 + ((x-dx0)/ddx)**2 + ((y-dy0)/ddy)**2 )
+            DUTOTAL(i,j) =  dU/( 1 + ((x-dx0)/ddx)**2 + ((y-dy0)/ddy)**2 )
         enddo
         enddo
 
@@ -969,29 +1002,29 @@ module modspinsystem
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni + rozbieg - 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-                UTOTAL(ni:mi,nj:mj) = 0
+                DUTOTAL(ni:mi,nj:mj) = 0
             case (ZRODLO_KIERUNEK_LEWO)
                 ni = zrodla(nrz)%polozenia(1,1) - 1
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni - rozbieg + 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-                UTOTAL(mi:ni,nj:mj) = 0
+                DUTOTAL(mi:ni,nj:mj) = 0
             case (ZRODLO_KIERUNEK_GORA)
                 ni = zrodla(nrz)%polozenia(1,1)
                 nj = zrodla(nrz)%polozenia(1,2) + 1
                 mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
                 mj = nj + rozbieg - 1
-                UTOTAL(ni:mi,nj:mj) = 0
+                DUTOTAL(ni:mi,nj:mj) = 0
             case (ZRODLO_KIERUNEK_DOL)
                 ni = zrodla(nrz)%polozenia(1,1)
                 nj = zrodla(nrz)%polozenia(1,2) - 1
                 mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
                 mj = nj - rozbieg + 1
-                UTOTAL(ni:mi,nj:mj) = 0
+                DUTOTAL(ni:mi,nj:mj) = 0
             endselect
         enddo
 
-
+        UTOTAL = UTOTAL + DUTOTAL
 
     end subroutine spinsystem_dodaj_lorentza
 
@@ -1031,25 +1064,29 @@ module modspinsystem
     ! -------------------------------------------------------------------
     subroutine system_oblicz_J()
           integer          :: i,j,s
-          complex*16       :: ycy,cx,jx,jy,rhoup , rhodwn,Xup,Xdwn
+          complex*16       :: ycy,cx,jx(-1:1),jy(-1:1),rhoup , rhodwn,Xup,Xdwn
+          complex*16       :: jrashba_x , jrashba_y , jlateral_x , jlateral_y
+          complex*16       :: tj0
 
 
           ! -----------------------------------------------------------------
+          tj0 = (-1.0/4.0/DX*II)
+          CURRENTXY = 0
           do i = 2 , nx-1
           do j = 2 , ny-1
+
+              jx = 0
+              jy = 0
               if(GFLAGS(i,j) == 0) then
-                do s = +1 , -1 , -2
                 cx  = EXP(+II*DX*DX*(j)*BZ)
+                do s = +1 , -1 , -2
+
 
                 ycy = conjg(cx)*VPHI(GINDEX(i+1,j,s))-VPHI(GINDEX(i-1,j,s))*cx
-                jx  = (-1.0/4.0/DX*II)*(conjg(VPHI(GINDEX(i,j,s)))*ycy - VPHI(GINDEX(i,j,s))*conjg(ycy))
+                jx(s)  =  tj0*(conjg(VPHI(GINDEX(i,j,s)))*ycy - VPHI(GINDEX(i,j,s))*conjg(ycy))
+
                 ycy = VPHI(GINDEX(i,j+1,s))-VPHI(GINDEX(i,j-1,s))
-                jy  = (-1.0/4.0/DX*II)*(conjg(VPHI(GINDEX(i,j,s)))*ycy - VPHI(GINDEX(i,j,s))*conjg(ycy))
-
-
-                CURRENT(i,j)  = CURRENT(i,j) + sqrt(DBLE(jx*jx + jy*jy))
-                CURRENTX(i,j) = CURRENTX(i,j) + jx
-                CURRENTY(i,j) = CURRENTY(i,j) + jy
+                jy(s)  =  tj0*(conjg(VPHI(GINDEX(i,j,s)))*ycy - VPHI(GINDEX(i,j,s))*conjg(ycy))
 
                 enddo ! end of s
 
@@ -1058,24 +1095,43 @@ module modspinsystem
 
                 rhoup  = abs(Xup)**2
                 rhodwn = abs(Xdwn)**2
-                jx    = (+(rhoup-rhodwn)*so_loc*DEY(i,j) + II*so_rashba*( Xdwn*conjg(Xup) - conjg(Xdwn)*Xup ) )
-                jy    = (-(rhoup-rhodwn)*so_loc*DEX(i,j) +    so_rashba*( Xdwn*conjg(Xup) + conjg(Xdwn)*Xup ) )
 
-                CURRENT(i,j)  = CURRENT(i,j) + sqrt(DBLE(jx*jx + jy*jy))
-                CURRENTX(i,j) = CURRENTX(i,j) + jx
-                CURRENTY(i,j) = CURRENTY(i,j) + jy
+                jrashba_x = II*so_rashba*( Xdwn*conjg(Xup) - conjg(Xdwn)*Xup )
+                jrashba_y =    so_rashba*( Xdwn*conjg(Xup) + conjg(Xdwn)*Xup )
 
-                RASHBA_CURRENT(i,j,1) = RASHBA_CURRENT(i,j,1) + II*so_rashba*( Xdwn*conjg(Xup) - conjg(Xdwn)*Xup )
-                RASHBA_CURRENT(i,j,2) = RASHBA_CURRENT(i,j,2) +    so_rashba*( Xdwn*conjg(Xup) + conjg(Xdwn)*Xup )
+                jlateral_x= +(rhoup-rhodwn)*so_loc*DEY(i,j)
+                jlateral_y= -(rhoup-rhodwn)*so_loc*DEX(i,j)
 
-                LATERAL_CURRENT(i,j,1) = LATERAL_CURRENT(i,j,1) + (rhoup-rhodwn)*so_loc*DEY(i,j)
-                LATERAL_CURRENT(i,j,2) = LATERAL_CURRENT(i,j,2) - (rhoup-rhodwn)*so_loc*DEX(i,j)
 
+                CURRENT(i,j,1)  = CURRENT(i,j,1) + sqrt(jx(+1)**2 + jy(+1)**2)
+                CURRENT(i,j,2)  = CURRENT(i,j,2) + sqrt(jx(-1)**2 + jy(-1)**2)
+                CURRENT(i,j,3)  = CURRENT(i,j,3) + sqrt(jrashba_x**2  + jrashba_y**2 )
+                CURRENT(i,j,4)  = CURRENT(i,j,4) + sqrt(jlateral_x**2 + jlateral_y**2)
+                CURRENT(i,j,5)  = CURRENT(i,j,5) + sqrt( (jx(+1)+jx(-1)+jrashba_x+jlateral_x)**2 + &
+                                                         (jy(+1)+jy(-1)+jrashba_y+jlateral_y)**2 )
+
+
+                CURRENTXY(i,j,1) = jx(+1) + jx(-1) + jrashba_x + jlateral_x
+                CURRENTXY(i,j,2) = jy(+1) + jy(-1) + jrashba_y + jlateral_y
               endif
           enddo
           enddo
-
+          call system_oblicz_divj()
     endsubroutine system_oblicz_J
+
+
+    subroutine system_oblicz_divj()
+          integer :: i,j
+          do i = 3 , nx-2
+          do j = 3 , ny-2
+              if(GFLAGS(i,j) == 0) then
+                DIVJ(i,j) = DIVJ(i,j) +  (CURRENTXY(i+1,j,1)-CURRENTXY(i-1,j,1))/2/DX +&
+                                         (CURRENTXY(i,j+1,2)-CURRENTXY(i,j-1,2))/2/DX
+              endif
+          enddo
+          enddo
+    end subroutine system_oblicz_divj
+
     ! ------------------------------------------------------------ -------
     ! Funkcja zapisuje do pliku nazwa dane wskazane przez typ (patrz enum)
     ! ------------------------------------------------------------ -------
@@ -1084,7 +1140,7 @@ module modspinsystem
     integer                   :: typ
     integer,optional,intent(in)::xstart,xstop,ystart,ystop
 
-    double precision :: fval
+    double precision :: fval,fval1,fval2,fval_up,fval_dwn
     integer          :: i,j,x1,x2,y1,y2
 
     x1 = 1
@@ -1105,7 +1161,7 @@ module modspinsystem
         do j = y1 , y2
                 fval = 0;
                 if(GFLAGS(i,j) >= B_NORMAL) fval = 1
-                write(86554,"(3e20.6)"),i*atomic_DX,j*atomic_DX,fval
+                write(86554,"(3f20.6)"),i*atomic_DX,j*atomic_DX,fval
         enddo
             write(86554,*),""
         enddo
@@ -1114,7 +1170,7 @@ module modspinsystem
         do i = x1 , x2
         do j = y1 , y2
                 fval = GFLAGS(i,j)
-                write(86554,"(3e20.6)"),i*atomic_DX,j*atomic_DX,fval
+                write(86554,"(3f20.6)"),i*atomic_DX,j*atomic_DX,fval
         enddo
             write(86554,*),""
         enddo
@@ -1132,7 +1188,7 @@ module modspinsystem
         do i = x1 , x2
         do j = y1 , y2
 
-                write(86554,"(2e20.6,2i10)"),i*atomic_DX,j*atomic_DX,GINDEX(i,j,+1),GINDEX(i,j,-1)
+                write(86554,"(2f20.6,2i10)"),i*atomic_DX,j*atomic_DX,GINDEX(i,j,+1),GINDEX(i,j,-1)
         enddo
             write(86554,*),""
         enddo
@@ -1142,20 +1198,56 @@ module modspinsystem
         do i = x1 , x2
         do j = y1 , y2
 !                fval = abs(PHI(i,j))
-                write(86554,"(4e20.6)"),i*atomic_DX,j*atomic_DX,abs(PHI(i,j,+1)),abs(PHI(i,j,-1))
+                write(86554,"(5f20.6)"),i*atomic_DX,j*atomic_DX,abs(PHI(i,j,+1))+abs(PHI(i,j,-1)),abs(PHI(i,j,+1)),abs(PHI(i,j,-1))
+        enddo
+            write(86554,*),""
+        enddo
+
+
+    ! ---------------------------------------
+    case(ZAPISZ_POLARYZACJE)
+
+        do i = x1 , x2
+        do j = y1 , y2
+!                fval = abs(PHI(i,j))
+                write(86554,"(5f20.6)"),i*atomic_DX,j*atomic_DX,POLARYZACJE(i,j,1),POLARYZACJE(i,j,2),POLARYZACJE(i,j,3)
         enddo
             write(86554,*),""
         enddo
     ! ---------------------------------------
-    case(ZAPISZ_J)
-        print*,"brak pradow"
+    case(ZAPISZ_J_TOTAL)
+
         do i = x1 , x2
         do j = y1 , y2
-!                fval = CURRENT(i,j)
-!                write(86554,"(5e20.6)"),i*atomic_DX,j*atomic_DX,fval,CURRENTX(i,j),CURRENTY(i,j)
+                fval = CURRENT(i,j,5)
+                write(86554,"(5f20.6)"),i*atomic_DX,j*atomic_DX,fval
         enddo
             write(86554,*),""
-        enddo    ! ---------------------------------------
+        enddo
+    case(ZAPISZ_DIVJ)
+
+        do i = x1 , x2
+        do j = y1 , y2
+                fval = DIVJ(i,j)
+                write(86554,"(5f20.6)"),i*atomic_DX,j*atomic_DX,fval
+        enddo
+            write(86554,*),""
+        enddo
+    case(ZAPISZ_J_ALL)
+
+        write(86554,*),"#x[nm]  y[nm]   j(x,y)  jrashba(x,y)    jlateral(x,y)"
+        do i = x1 , x2
+        do j = y1 , y2
+                fval     =  CURRENT(i,j,5)
+                fval_up  =  CURRENT(i,j,1)
+                fval_dwn =  CURRENT(i,j,2)
+                fval1 =  CURRENT(i,j,3)
+                fval2 =  CURRENT(i,j,4)
+                write(86554,"(10f20.6)"),i*atomic_DX,j*atomic_DX,fval,fval_up,fval_dwn,fval1,fval2
+        enddo
+            write(86554,*),""
+        enddo
+    ! ---------------------------------------
     case(ZAPISZ_WAVEFUNC)
         print*,"brak wavefunc"
         do i = x1 , x2
