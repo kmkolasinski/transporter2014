@@ -1,0 +1,1 @@
+Nowa wersja programu bedzie uwzgledniac tylko przeplyw elektronow prawo-lewo implementujac w.b. QTB.
