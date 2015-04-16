@@ -405,6 +405,7 @@ contains
             zrodlo%ChiModDown(1:N,:,:) = zrodlo%ChiMod(N+1:2*N,:,:)
         else
             print*,"    Liczba modow wynosi zero - transportu brak"
+
         endif
 
         ! MODUL RELACJI DYSPERSJI JUZ NIE POTRZEBNY
@@ -433,6 +434,8 @@ contains
             zrodlo%hnx            = (pYN + pY1)/2.0*DX
         endif
 
+
+         if(lModow == 0)  return
 
         call zrodlo%spinzrodlo_wypisz_info()
 

@@ -5,7 +5,7 @@ MODULE spinmodpop
     implicit none
     private
 
-    double precision :: DX  , Ef , t0 , tc0 , BZ , hny , Emax , KIN
+    double precision :: DX  , Ef , t0 , tc0 , BZ , BX , BY , hny , Emax , KIN
     integer          :: N , wypisz = 0
 
 
@@ -33,7 +33,7 @@ MODULE spinmodpop
 
 !     .. Local Arrays ..
       INTEGER,allocatable,dimension(:)          :: ISUPPZ, IWORK
-      DOUBLE PRECISION,allocatable,dimension(:) :: W( : ), RWORK( : )
+      DOUBLE PRECISION,allocatable,dimension(:) :: MODPOP_VALS( : ), RWORK( : )
       COMPLEX*16,allocatable,dimension(:)       :: Z( :, : ), WORK( : )
 
 
@@ -42,7 +42,7 @@ MODULE spinmodpop
       public :: spinmodpop_zwalnienie_pamieci
       public :: spinmodpop_calc_modes_from_wfm!(pDx,pN,pEf,pB,pUvec,pbHorizontal)
       public :: spinmodpop_calc_TB_current
-      public :: LICZBA_MODOW,L_M,LICZBA_MODOW_EVANESCENTYCH,ChiMod,ChiKvec,ChiLambda
+      public :: LICZBA_MODOW,L_M,LICZBA_MODOW_EVANESCENTYCH,ChiMod,ChiKvec,ChiLambda,MODPOP_VALS
     contains
 
 ! ------------------------------------------------------------------------------------ !
@@ -68,6 +68,8 @@ subroutine spinmodpop_inicjalizacja(pDx,pN,pEf,pB,pUvec)
     LWMAX = 50*N*2
     t0    = 0.5/DX/DX
     BZ    = BtoDonorB(pB)
+    BX    = BtoDonorB(atomic_Bx)
+    BY    = BtoDonorB(atomic_By)
     hny   = (N+1)/2.0!
 
     if(TRANS_DEBUG)then
@@ -110,7 +112,7 @@ subroutine spinmodpop_inicjalizacja(pDx,pN,pEf,pB,pUvec)
 
     allocate(ISUPPZ( 2*N ))
     allocate(IWORK( LWMAX ))
-    allocate(W( 2*N ))
+    allocate(MODPOP_VALS( 2*N ))
     allocate(RWORK( LWMAX ))
     allocate(Z( 2*N, 2*N ))
     allocate(WORK( LWMAX ))
@@ -134,7 +136,7 @@ subroutine spinmodpop_inicjalizacja(pDx,pN,pEf,pB,pUvec)
     close(33345)
 
     CALL ZHEEVR( "N", 'Values', 'Lower', 2*N, Hamiltonian, 2*N, VL, VU, IL,&
-    &             IU, ABSTOL, M, W, Z, 2*N, ISUPPZ, WORK, LWORK, RWORK,&
+    &             IU, ABSTOL, M, MODPOP_VALS, Z, 2*N, ISUPPZ, WORK, LWORK, RWORK,&
     &             LRWORK, IWORK, LIWORK, INFO )
 
     if( INFO /= 0 ) then
@@ -169,7 +171,7 @@ subroutine spinmodpop_utworz_hamiltonian(pk)
         Dy  = exp(II*Ey(i)*so_loc*DX)
 
         Hamiltonian(GINDEX(i,1),GINDEX(i,1)) = UVEC(i) + 4*t0 + 0.5 * G_LAN * M_EFF * BZ - t0*Kmx*Cx*conjg(Dy) - t0*Kx*conjg(Cx)*Dy
-        Hamiltonian(GINDEX(i,1),GINDEX(i,2)) = tc0*Kx*conjg(Cx) - tc0*Kmx*Cx
+        Hamiltonian(GINDEX(i,1),GINDEX(i,2)) = tc0*Kx*conjg(Cx) - tc0*Kmx*Cx + 0.5 * G_LAN * M_EFF * (Bx  - II*By)
 
         if ( i > 1 ) then
             Hamiltonian(GINDEX(i,1),GINDEX(i-1,1)) = -t0
@@ -182,7 +184,7 @@ subroutine spinmodpop_utworz_hamiltonian(pk)
 
         ! spin down
         Hamiltonian(GINDEX(i,2),GINDEX(i,2)) = UVEC(i) + 4*t0 - 0.5 * G_LAN * M_EFF * BZ - t0*Kmx*Cx*(Dy) - t0*Kx*conjg(Cx)*conjg(Dy)
-        Hamiltonian(GINDEX(i,2),GINDEX(i,1)) = -tc0*Kx*conjg(Cx) + tc0*Kmx*Cx
+        Hamiltonian(GINDEX(i,2),GINDEX(i,1)) = -tc0*Kx*conjg(Cx) + tc0*Kmx*Cx + 0.5 * G_LAN * M_EFF * (Bx  + II*By)
 
         if ( i > 1 ) then
             Hamiltonian(GINDEX(i,2),GINDEX(i-1,2)) = -t0
@@ -241,7 +243,7 @@ subroutine spinmodpop_relacja_dyspersji(pkmin,pkmax,pdk,pEmax,nazwa_pliku)
     !     Solve eigenproblem.
     !
     CALL ZHEEVR( "V", 'Values', 'Lower', 2*N, Hamiltonian, 2*N, VL, VU, IL,&
-    &             IU, ABSTOL, M, W, Z, 2*N, ISUPPZ, WORK, LWORK, RWORK,&
+    &             IU, ABSTOL, M, MODPOP_VALS, Z, 2*N, ISUPPZ, WORK, LWORK, RWORK,&
     &             LRWORK, IWORK, LIWORK, INFO )
     max_mods = M
 
@@ -256,9 +258,9 @@ subroutine spinmodpop_relacja_dyspersji(pkmin,pkmax,pdk,pEmax,nazwa_pliku)
         !
         !     Solve eigenproblem.
         !
-        W = 0
+        MODPOP_VALS = 0
         CALL ZHEEVR( "V", 'Values', 'Lower', 2*N, Hamiltonian, 2*N, VL, VU, IL,&
-        &             IU, ABSTOL, M, W, Z, 2*N, ISUPPZ, WORK, LWORK, RWORK,&
+        &             IU, ABSTOL, M, MODPOP_VALS, Z, 2*N, ISUPPZ, WORK, LWORK, RWORK,&
         &             LRWORK, IWORK, LIWORK, INFO )
 
         polaryzacje = -100
@@ -284,7 +286,7 @@ subroutine spinmodpop_relacja_dyspersji(pkmin,pkmax,pdk,pEmax,nazwa_pliku)
             YB = sum(abs(Zup-II*Zdwn)**2)
             polaryzacje(i,3) = (YA-YB)/(YA+YB) ! kierunek y
 
-            energie(i) = W(i)*Rd*1000.0
+            energie(i) = MODPOP_VALS(i)*Rd*1000.0
         enddo
 
 
@@ -309,7 +311,7 @@ end subroutine spinmodpop_relacja_dyspersji
 
 subroutine spinmodpop_zwalnienie_pamieci()
 
-    print*,"    SPINMODPOP:Zwalnianie pamieci."
+    if(TRANS_DEBUG == .true. ) print*,"    SPINMODPOP:Zwalnianie pamieci."
     if(allocated(UVEC))        deallocate(Uvec)
     if(allocated(Ey))          deallocate(Ey)
     if(allocated(GINDEX))      deallocate(GINDEX)
@@ -317,7 +319,7 @@ subroutine spinmodpop_zwalnienie_pamieci()
 
     if(allocated(ISUPPZ))deallocate(ISUPPZ)
     if(allocated(IWORK ))deallocate(IWORK )
-    if(allocated(W     ))deallocate(W     )
+    if(allocated(MODPOP_VALS))deallocate(MODPOP_VALS)
     if(allocated(RWORK ))deallocate(RWORK )
     if(allocated(Z     ))deallocate(Z     )
     if(allocated(WORK  ))deallocate(WORK  )
@@ -378,6 +380,8 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
     t0    = 0.5/DX/DX
     tc0   = 0.5/DX
     BZ    = BtoDonorB(pB)
+    BX    = BtoDonorB(atomic_Bx)
+    BY    = BtoDonorB(atomic_By)
     hny   = (N+1)/2.0! dobor odpowieniego cechowania
 
 
@@ -492,6 +496,9 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
 
         if(i < N) MatS(i,i+1,:) = -II*so_rashba*tc0
         if(i > 1) MatS(i,i-1,:) = +II*so_rashba*tc0
+        ! zeeman spin down
+        MatS(i,i,2) = 0.5 * G_LAN * M_EFF * ( BX - II * BY)
+        MatS(i,i,1) = 0.5 * G_LAN * M_EFF * ( BX + II * BY)
     enddo
 
     ! Wypelnienie macierzy:
@@ -763,9 +770,9 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
            !endif
 
         enddo
-        LICZBA_MODOW_EVANESCENTYCH = 1*LICZBA_MODOW_EVANESCENTYCH/4
-        print*,"NOWAN=",LICZBA_MODOW_EVANESCENTYCH
-        if ( TRANS_DEBUG .or. .true. ) then
+        LICZBA_MODOW_EVANESCENTYCH = 1*LICZBA_MODOW_EVANESCENTYCH/8
+        !print*,"NOWAN=",LICZBA_MODOW_EVANESCENTYCH
+        if ( TRANS_DEBUG  ) then
         print*,"-------------------------------------------------------------"
         print*," K evan.  :         Input mod.      |         Output mod."
         print*,"-------------------------------------------------------------"

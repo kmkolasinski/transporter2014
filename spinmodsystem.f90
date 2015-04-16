@@ -15,7 +15,7 @@ module modspinsystem
     integer :: Nx,Ny          ! wymiar ukladu
     doubleprecision  :: TRANS_R ! prawdopodobienstwo odbicia
     doubleprecision  :: TRANS_T ! prawdopodobienstwo przejscia
-    doubleprecision :: Bz , Ef , Dx
+    doubleprecision :: Bz , Bx , By , Ef , Dx
 
     type(cspinzrodlo),dimension(:),allocatable    :: zrodla    ! TABLICA Z OBIEKTAMI ZRODLA
 !    type(cabs_zrodlo),dimension(:),allocatable     :: abs_zrodla ! TABLICA Z OBIEKTAMI WIRTUALNYCH W.B.
@@ -348,6 +348,8 @@ module modspinsystem
 
         Ef  = atomic_Ef/1000.0/Rd
         BZ  = BtoDonorB(atomic_Bz)
+        Bx  = BtoDonorB(atomic_Bx)
+        By  = BtoDonorB(atomic_By)
         DX  = atomic_DX*L2LR
 
         print*,"! ----------------------------------------------- !"
@@ -511,7 +513,7 @@ module modspinsystem
                     TRANS_MAXN = TRANS_MAXN + 1
 !                    print*,"transp:",2
             case(B_NORMAL)
-                    MATASIZE = MATASIZE + 9
+                    MATASIZE = MATASIZE + 9 + 1 !+1 od oddzialywania z polem (Zemann)
                     TRANS_MAXN = TRANS_MAXN + 1
 !                    print*,"normal:",9
             end select
@@ -557,6 +559,11 @@ module modspinsystem
         integer :: d,s,u,v
         rval = - d*II*so_rashba / 2.0 / DX
     end function Sv
+
+    complex*16 function Sb(d,s,u,v) result(rval)
+        integer :: d,s,u,v
+        rval = 0.5*G_LAN*M_EFF*(Bx + s * II * By )
+    end function Sb
 
     subroutine wypelnij_macierz()
 
@@ -623,6 +630,14 @@ module modspinsystem
                     idxA(itmp,1) = GINDEX(u,v  ,+s)
                     idxA(itmp,2) = GINDEX(u,v-1,-s)
                     itmp = itmp + 1
+
+                    ! odzialywanie z polem w kierunku x i y (zeemann)
+                    cmatA(itmp)  = Sb(0,-s,0,0)
+                    idxA(itmp,1) = GINDEX(u,v  ,+s)
+                    idxA(itmp,2) = GINDEX(u,v  ,-s)
+                    itmp = itmp + 1
+
+
 
 
                 ! ----------------------------------------------------------------------
@@ -718,7 +733,7 @@ module modspinsystem
                         itmp = itmp + 1
 
 
-                        cmatA(itmp)  = &
+                        cmatA(itmp)  = Sb(0,-s,0,0) + &
                             zrodla(nzrd)%Sigma(ln,nn,+s,-s)*Tu(-dir,+s,u,v) + &
                             zrodla(nzrd)%Sigma(ln,nn,-s,-s)*Su(-dir,-s,u,v)
 

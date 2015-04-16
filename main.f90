@@ -4,6 +4,7 @@ program transporter
  use modspinsystem
  use modjed
  use modinip
+ use modspinzrodlo
 ! use modsystem
  use ifport
  implicit none
@@ -17,9 +18,9 @@ program transporter
  integer :: liczba_zrodel = 2;
  double precision :: dx   = 2 , pdx , omega ,omega2 , x , y , gamma , xpos
  double precision,dimension(:,:), allocatable  :: TR_MAT
- integer :: i,j
- double precision :: width , G21(-1:1) , G23(-1:1)
-
+ integer :: i,j, sum_mod
+ double precision :: width , G21(-1:1) , G23(-1:1) , sigmax , sigmay , kvec
+ type(cspinzrodlo) :: qpc_zrodlo
 
 ! -----------------------------------------------
 ! Zmienne wczytywane z config.ini
@@ -33,30 +34,52 @@ call getDoubleValue("Dane","eps",E_MAT)
 call getDoubleValue("Dane","g_lan",G_LAN)
 call getDoubleValue("Dane","Ef",atomic_Ef)
 call getDoubleValue("Dane","Bz",atomic_Bz)
-call getDoubleValue("Dane","rashba",atomic_Rashba)
-call getDoubleValue("Dane","loc",atomic_LOC)
+call getDoubleValue("Dane","Bx",atomic_Bx)
+call getDoubleValue("Dane","By",atomic_By)
+
+
+call getDoubleValue("Dane","so_alpha3D",so_alpha3D)
+call getDoubleValue("Dane","so_Fz",so_Fz)
 call getDoubleValue("Dane","omega",omega)
 call getDoubleValue("Dane","omega2",omega2)
 call getDoubleValue("Dane","gamma",gamma)
+call getDoubleValue("Dane","sigmax",sigmax)
+call getDoubleValue("Dane","sigmay",sigmay)
 call getDoubleValue("Dane","xpos",xpos)
 
 
-!call modjed_ustaw_konwersje_jednostek(M_EFF,E_MAT);
+call modjed_ustaw_konwersje_jednostek(0.0465D0,12.0D0);
+
 !call modjed_ustaw_InGaAs()
-call modjed_ustaw_InSb()
-dx = atomic_DX
+!call modjed_ustaw_InSb()
+
+dx = atomic_dx
 call spinsystem_inicjalizacja(NX,NY,liczba_zrodel);
 
 
+
+!
+!open(unit = 222, file= "T.txt" )
+!open(unit = 333, file= "K.txt" )
+!!do  atomic_Bz = -0.0 , 3.0 , 0.05
+!
 UTOTAL = 0
 do i = 1 , nx
 do j = 1 , ny
     x = i * dx
     y = j * dx
-    UTOTAL(i,j) = ( 0.5*(omega/1000.0/Rd)**2*((y-ny*dx/2)**2) + (omega2/1000.0/Rd)*(y-ny*dx/2) )* &
-                   exp( -0.5*( x - xpos )**2/(gamma)**2 )
+    UTOTAL(i,j) = gauss_gate(omega,xpos,0.0D0,sigmax,sigmay,x,y) + &
+                  gauss_gate(omega,xpos,ny*dx,sigmax,sigmay,x,y)
+    !UTOTAL(i,j) = ( 0.5*(omega/1000.0/Rd)**2*((y-ny*dx/2)**2)  )* &
+    !               exp( -0.5*( x - xpos )**2/(gamma)**2 ) + (omega2/1000.0/Rd)*(y-0*ny*dx/2)
+
 enddo
 enddo
+!
+!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
+!call sledzenie_kf()
+!
+!stop
 
 !call zrodla(1)%spinzrodlo_ustaw(3,NY/2-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
 !call zrodla(2)%spinzrodlo_ustaw(NY/2-3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
@@ -65,80 +88,43 @@ call reset_clock()
 call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
 call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
 
-!call zrodla(3)%spinzrodlo_ustaw(NY/2-20+40,NY/2+20+40,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
-
-!call zrodla(1)%spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"rel1.txt")
-!call spinsystem_dodaj_lorentza(5.0D0,50.0D0,50.0D0,nx/2*atomic_DX,ny/2*atomic_DX)
-
-call utworz_system()
+call qpc_zrodlo%spinzrodlo_ustaw(3,NY-3,nx/2,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
 
 
+!call zrodla(1) %spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"rel1.txt")
+call qpc_zrodlo%spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"rel1.txt")
 
-    open(unit = 222, file= "T.txt" )
 
+    call utworz_system()
     call spinsystem_rozwiaz_problem(1,TR_MAT)
-!    G21(+1) = TR_MAT(1,1)
-!    G21(-1) = TR_MAT(1,2)
-!    G23(+1) = TR_MAT(3,1)
-!    G23(-1) = TR_MAT(3,2)
-!    print*,"G21(+1)=",G21(+1)
-!    print*,"G21(-1)=",G21(-1)
-!
-!    print*,"G23(+1)=",G23(+1)
-!    print*,"G23(-1)=",G23(-1)
-!    print*,"W=",width,"R=",sum(TR_MAT(1,:)),"T=",sum(TR_MAT(2,:))
-    write(222,*),omega,sum(TR_MAT(2,:)),sum(TR_MAT(1,:))
-!    write(222,"(20f16.8)"),omega,G21(+1),G21(-1),G23(+1),G23(-1)
+    G21(+1) = 0
+    G21(-1) = 0
+
+    do sum_mod  = 1  , zrodla(1)%liczba_modow -1 , 2
+        G21(+1) = G21(+1) + TR_MAT(2,sum_mod+0)
+        G21(-1) = G21(-1) + TR_MAT(2,sum_mod+1)
+    enddo
+!    print*,"W=",width,"R=",sum(TR_MAT(1,:)),"T=",sum(TR_MAT(2,:))," inne = " , G21(+1)+G21(-1)
+    write(222,"(20e20.6)"),omega,atomic_Bz,sum(TR_MAT(2,:)),sum(TR_MAT(1,:)) !,G21(+1)-G21(-1),G21(+1),G21(-1)
+!    write(333,"(30e20.6)"),omega,atomic_Bz,imag(qpc_zrodlo%ChiKvec(1:qpc_zrodlo%liczba_modow,+1))*L2LR
+
+
+
+call qpc_zrodlo%spinzrodlo_zwolnij_pamiec()
+!enddo ! end of B loop
 
     close(222)
-!call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
-!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
+    close(333)
+call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
+call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
 call spinsystem_zapisz_do_pliku("j.txt",ZAPISZ_J_ALL)
-!call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
-!call spinsystem_zapisz_do_pliku("divj.txt",ZAPISZ_DIVJ)
-!call spinsystem_zapisz_do_pliku("pol.txt",ZAPISZ_POLARYZACJE)
+call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
+call spinsystem_zapisz_do_pliku("divj.txt",ZAPISZ_DIVJ)
+call spinsystem_zapisz_do_pliku("pol.txt",ZAPISZ_POLARYZACJE)
 
 
 call spinsystem_zwalnienie_pamieci()
 if(allocated(TR_MAT))deallocate(TR_MAT)
-
-
-!call system_inicjalizacja(NX,NY,liczba_zrodel,atomic_DX);
-!
-!call system_dodaj_abs_zrodlo(nx/2-15,nx-1,1,atomic_Ef,ZRODLO_KIERUNEK_GORA)
-!call system_dodaj_abs_zrodlo(nx/2-15,nx-1,ny-2,atomic_Ef,ZRODLO_KIERUNEK_DOL)
-!
-!UTOTAL= 0
-!
-!call zrodla(1)%zrodlo_ustaw(NY/2-5,NY/2+5,1 ,atomic_DX,atomic_Ef,atomic_Bz,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-!call zrodla(2)%zrodlo_ustaw(2      ,NY-1   ,nx,atomic_DX,atomic_Ef,atomic_Bz,ZRODLO_KIERUNEK_LEWO ,UTOTAL)
-!
-!
-!!call system_dodaj_lorentza(10.0D0,50.0D0,50.0D0,250.0D0,400.0D0)
-!
-!
-!
-!call utworz_system()
-!!call spinsystem_zapisz_do_pliku("flagi.txt",ZAPISZ_FLAGI)
-!!call spinsystem_zapisz_do_pliku("indeksy.txt",ZAPISZ_INDEKSY)
-!
-!width = 100
-!!do width = 0.0 , 100.0 , 1.0D0
-!!    UTOTAL = 0
-!!    call spinsystem_dodaj_pionowy_slupek_potencjalu( 100.0D0,-100.0D0,300.0D0-width/2,14.0D0,50.0D0,4.3D0)
-!!    call spinsystem_dodaj_pionowy_slupek_potencjalu( 100.0D0,300.0D0+width/2,700.0D0,14.0D0,50.0D0,4.3D0)
-!
-!    call system_rozwiaz_problem(1,TR_MAT)
-!    print*,"W=",width,"R=",sum(TR_MAT(1,:)),"T=",sum(TR_MAT(2,:))
-!    write(222,*),width,sum(TR_MAT(1,:)),sum(TR_MAT(2,:))
-!!enddo
-!
-!call system_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
-!call system_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
-!call system_zapisz_do_pliku("j.txt",ZAPISZ_J)
-!call system_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
-!call system_zwalnienie_pamieci()
-!if(allocated(TR_MAT))deallocate(TR_MAT)
 
 
 
@@ -178,7 +164,70 @@ subroutine utworz_system()
     call spinsystem_inicjalizacja_ukladu(wjazd,4,4)
 end subroutine utworz_system
 
+double precision function gauss_gate(U0,xp,yp,sigmax,sigmay,x,y) result(rval)
+        doubleprecision, intent(in):: U0,xp,yp,sigmax,sigmay,x,y
+
+        rval =  U0 * exp( -(( x - xp)/(2*sigmax))**2 ) * exp( -(( y - yp)/(2*sigmay))**2 )
+
+endfunction gauss_gate
+
+
+subroutine sledzenie_kf()
+double precision :: aux , ub , W1(50) , W2(50) , kvecs(50)
+integer :: no_kvecs , iter
+! przeliczamy jednostki
+call modjed_ustaw_konwersje_jednostek(0.0465D0,12.0D0);
+
+!so_rashba     = 0
+!so_loc        = 0
+atomic_Bz     = 0
+
+call qpc_zrodlo%spinzrodlo_ustaw(3,NY-3,nx/2,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+print*,"g_land=",G_LAN
+
+
+no_kvecs = qpc_zrodlo%liczba_modow/2
+do iter = 1 , qpc_zrodlo%liczba_modow
+    kvecs(iter) = imag(qpc_zrodlo%ChiKvec(iter,+1)) * L2LR
+    print*,"kvec1=",kvecs(iter)
+enddo
+
+print*,"liczba sledzonych modow=",no_kvecs
+
+!kvec = 0
+!call qpc_zrodlo%spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"rel1.txt")
+
+open(unit = 333, file= "ZeemanEodB.txt" )
+do atomic_Bz = 0.01 , 10.0 , 0.05
+
+    call spinmodpop_inicjalizacja(atomic_DX,qpc_zrodlo%N,atomic_Ef,atomic_Bz,qpc_zrodlo%Uvec)
+
+    W1 = 0
+    W2 = 0
+    do iter = 1 , no_kvecs
+        call spinmodpop_relacja_dyspersji(kvecs(2*iter-1),kvecs(2*iter-1) ,0.001D0,atomic_Ef*2,"rel.txt")
+        W1(iter) = (MODPOP_VALS(2*iter-1))*Rd*1000.0
+        call spinmodpop_relacja_dyspersji(kvecs(2*iter-0),kvecs(2*iter-0),0.001D0,atomic_Ef*2,"rel.txt")
+        W2(iter) = (MODPOP_VALS(2*iter-0))*Rd*1000.0
+    enddo
+
+
+    aux =  ((M_EFF)*BtoDonorB(atomic_Bz))*Rd*1000.0
+
+    write(333,"(100e20.6)"),atomic_Bz,omega,G_LAN,&
+                    sum((W1(1:no_kvecs)-W2(1:no_kvecs))/aux)/no_kvecs,&
+                        (W1(1:no_kvecs)-W2(1:no_kvecs))/aux,&
+                        W1(1:no_kvecs),W2(1:no_kvecs)
+
+
+
+    call spinmodpop_zwalnienie_pamieci()
+enddo
+
+close(333)
+
+call qpc_zrodlo%spinzrodlo_zwolnij_pamiec()
+end subroutine sledzenie_kf
 
 
 end program transporter
-

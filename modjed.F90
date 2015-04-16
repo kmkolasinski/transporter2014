@@ -19,10 +19,14 @@ MODULE modjed
     double precision  :: G_LAN ! czynnik landego
     double precision :: atomic_Ef   ! energia elektronu [meV]
     double precision :: atomic_Bz   ! polemagnetyczne w [T]
+    double precision :: atomic_Bx   ! polemagnetyczne w [T]
+    double precision :: atomic_By   ! polemagnetyczne w [T]
     double precision :: atomic_Rashba   ! sprzezenie spin-orbita typu rashba [nm^2]
     double precision :: atomic_LOC      ! sprzezenie spin-orbita typu lateral [nm^2]
     double precision :: atomic_DX
     double precision :: so_rashba,so_loc ! w jednostkach donorowych
+    double precision :: so_Fz
+    double precision :: so_alpha3D
 
     logical,parameter :: TRANS_DEBUG = .false.
 
@@ -60,13 +64,18 @@ MODULE modjed
         ! na podstawie -- http://www.ioffe.ru/SVA/NSM/Semicond/GaInAs/
         ! lande factor -- http://arxiv.org/pdf/1406.2848v1.pdf
         ! http://journals.aps.org/prb/abstract/10.1103/PhysRevB.35.7729
-        G_LAN = -8.97
+
+        G_LAN      = -8.97
+        so_Fz      = 20.0 ! w meV/nm
+        so_alpha3D = 0.572 ! w nm^2
+
         call modjed_ustaw_konwersje_jednostek(0.0465D0,12.0D0)
     end subroutine modjed_ustaw_InGaAs
 
     subroutine modjed_ustaw_InSb()
         ! na podstawie pracy doktorskiej (colwiz zakladka SO)
         G_LAN = -50.0
+!        G_LAN = -10.0
         call modjed_ustaw_konwersje_jednostek(0.014D0,16.0D0)
     end subroutine modjed_ustaw_InSb
 
@@ -84,8 +93,10 @@ MODULE modjed
         LR2L      = 1.0/L2LR
         kbT       = 8.617D-5*Temp/Rd
 
-        so_rashba = atomic_Rashba * L2LR  / 1000.0 / Rd
-        so_loc    = atomic_LOC * L2LR * L2LR
+        atomic_Rashba = so_alpha3D*so_Fz
+        atomic_LOC    = so_alpha3D
+        so_rashba     = atomic_Rashba * L2LR  / 1000.0 / Rd
+        so_loc        = atomic_LOC * L2LR * L2LR
         print*,"Rashba  =",so_rashba," [donorowe]"
         print*,"Lateral =",so_loc   ," [donorowe]"
 
