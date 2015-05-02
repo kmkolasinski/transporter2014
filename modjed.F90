@@ -30,6 +30,19 @@ MODULE modjed
 
     logical,parameter :: TRANS_DEBUG = .false.
 
+
+     ENUM,BIND(C)
+        ENUMERATOR :: USE_SUPER_LU      = 0
+        ENUMERATOR :: USE_UMFPACK       = 1
+    END ENUM
+
+
+!DEC$ IF DEFINED  (USE_UMF_PACK)
+integer :: TRANS_SOLVER = USE_UMFPACK
+!DEC$ ELSE
+integer :: TRANS_SOLVER = USE_SUPER_LU
+!DEC$ ENDIF
+
     ENUM,BIND(C)
         ENUMERATOR :: B_NORMAL          = 0 ! FLAGA OZNACZA ZE TO NIE JEST BRZEG
         ENUMERATOR :: B_DIRICHLET       = 2

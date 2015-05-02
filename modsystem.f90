@@ -1372,6 +1372,10 @@ module modsystem
         ldb  = n
         nrhs = 1
 
+
+!DEC$ IF DEFINED  (USE_UMF_PACK)
+
+!DEC$ ELSE
       selectcase (iopt)
       case (1)
 ! First, factorize the matrix. The factors are stored in *factors* handle.
@@ -1399,8 +1403,13 @@ module modsystem
 !      iopt = 3
       call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind, b, ldb,factors, info )
       endselect
+!DEC$ ENDIF
 
       endsubroutine solve_system
+
+
+
+
 
 end module
 

@@ -53,6 +53,8 @@ call modjed_ustaw_konwersje_jednostek(0.0465D0,12.0D0);
 !call modjed_ustaw_InGaAs()
 !call modjed_ustaw_InSb()
 
+print*,"solver=",TRANS_SOLVER
+!TRANS_SOLVER = USE_UMFPACK
 dx = atomic_dx
 call spinsystem_inicjalizacja(NX,NY,liczba_zrodel);
 
@@ -68,8 +70,8 @@ do i = 1 , nx
 do j = 1 , ny
     x = i * dx
     y = j * dx
-    UTOTAL(i,j) = gauss_gate(omega,xpos,0.0D0,sigmax,sigmay,x,y) + &
-                  gauss_gate(omega,xpos,ny*dx,sigmax,sigmay,x,y)
+    !UTOTAL(i,j) = gauss_gate(omega,xpos,0.0D0,sigmax,sigmay,x,y) + &
+    !              gauss_gate(omega,xpos,ny*dx,sigmax,sigmay,x,y)
     !UTOTAL(i,j) = ( 0.5*(omega/1000.0/Rd)**2*((y-ny*dx/2)**2)  )* &
     !               exp( -0.5*( x - xpos )**2/(gamma)**2 ) + (omega2/1000.0/Rd)*(y-0*ny*dx/2)
 
@@ -88,11 +90,11 @@ call reset_clock()
 call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
 call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
 
-call qpc_zrodlo%spinzrodlo_ustaw(3,NY-3,nx/2,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+!call qpc_zrodlo%spinzrodlo_ustaw(3,NY-3,nx/2,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
 
 
 !call zrodla(1) %spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"rel1.txt")
-call qpc_zrodlo%spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"rel1.txt")
+!call qpc_zrodlo%spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"rel1.txt")
 
 
     call utworz_system()
@@ -110,7 +112,7 @@ call qpc_zrodlo%spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"r
 
 
 
-call qpc_zrodlo%spinzrodlo_zwolnij_pamiec()
+!call qpc_zrodlo%spinzrodlo_zwolnij_pamiec()
 !enddo ! end of B loop
 
     close(222)
@@ -126,7 +128,7 @@ call spinsystem_zapisz_do_pliku("pol.txt",ZAPISZ_POLARYZACJE)
 call spinsystem_zwalnienie_pamieci()
 if(allocated(TR_MAT))deallocate(TR_MAT)
 
-
+print*,"TOTAL_TIME:" , get_clock()
 
 contains
 

@@ -9,38 +9,81 @@ debug:
 zeus:
 	make C=ifortZEUS
 
+# -----------------------------------
+# Uzyj polecenia
+# UMFPACK_MACRO=-DUSE_UMF_PACK
+# aby skompilowac z UMFPACKIEM
+UMFPACK_MACRO=
+#-DUSE_UMF_PACK
+
 ifeq ($(C),ifort)
 FC=ifort
+
 BASEDIR=/home/mkk/libs
-FCFLAGS= -c -O3  -132  -I$(BASEDIR)/SuperLU_4.3/SRC
-FCCFLAGS= -c -O3 -I$(BASEDIR)/SuperLU_4.3/SRC
 FBFLAGS=  -O3  -132
-FLFLAGS= -L/opt/intel/mkl/lib/intel64/ -L/opt/intel/composer_xe_2013_sp1.1.106/mkl/lib/intel64/
-#LIBS= $(BASEDIR)/lapack-3.4.2/liblapack.a  $(BASEDIR)/SuperLU_4.3/lib/libsuperlu_4.3.a  $(BASEDIR)/BLAS/blas_IFORT.a
-LIBS=  $(BASEDIR)/libsuperlu_4.3.a -mkl -static-intel
+
+
+ifeq ($(UMFPACK_MACRO),-DUSE_UMF_PACK)
+LIBS= $(BASEDIR)/libumfpack.a $(BASEDIR)/libamd.a
+FCFLAGS= -c -O3  -132  $(UMFPACK_MACRO)
+FCCFLAGS= -c -O3
+SUPERLU_FILES=
+UMFPACK_FILES=umfpack.o
+else
+LIBS= $(BASEDIR)/libsuperlu_4.3.a
+FCFLAGS= -c -O3  -132  -I$(BASEDIR)/SuperLU_4.3/SRC $(UMFPACK_MACRO)
+FCCFLAGS= -c -O3 -I$(BASEDIR)/SuperLU_4.3/SRC
+SUPERLU_FILES=zgssv.o
+UMFPACK_FILES=
+endif
+FLIBS=   $(LIBS)  -mkl -static-intel
 
 else ifeq ($(C),ifortDEBUG)
 FC=ifort
-BASEDIR=/home/mkk/libs
-FCFLAGS= -c -132 -traceback -O0 -check all -fpe0 -warn -traceback -debug extended -I$(BASEDIR)/SuperLU_4.3/SRC
+BASEDIR =/home/mkk/libs
+FBFLAGS =  -O0 -132
+
+ifeq ($(UMFPACK_MACRO),-DUSE_UMF_PACK)
+FCFLAGS = -c -132 -traceback -O0 -check all -fpe0 -warn -traceback -debug extended  $(UMFPACK_MACRO)
+FCCFLAGS= -c -O0 -Wall -g
+LIBS= $(BASEDIR)/libumfpack.a $(BASEDIR)/libamd.a
+SUPERLU_FILES=
+UMFPACK_FILES=umfpack.o
+else
+LIBS= $(BASEDIR)/libsuperlu_4.3.a
+FCFLAGS = -c -132 -traceback -O0 -check all -fpe0 -warn -traceback -debug extended -I$(BASEDIR)/SuperLU_4.3/SRC $(UMFPACK_MACRO)
 FCCFLAGS= -c -O0 -Wall -g -I$(BASEDIR)/SuperLU_4.3/SRC
-FBFLAGS=  -O0 -132
-#LIBS=  $(BASEDIR)/lapack-3.4.2/liblapack.a  $(BASEDIR)/SuperLU_4.3/lib/libsuperlu_4.3.a  $(BASEDIR)/BLAS/blas_IFORT.a  -lm
-LIBS=  $(BASEDIR)/libsuperlu_4.3.a -mkl -static-intel
+SUPERLU_FILES=zgssv.o
+UMFPACK_FILES=
+endif
+FLIBS=   $(LIBS)  -mkl -static-intel
+
 else ifeq ($(C),ifortZEUS)
-BASEDIR=/people/gjkolasi
 FC=ifort
-FCFLAGS= -c -O3  -132  -I$(BASEDIR)/SuperLU_4.3/SRC
-FCCFLAGS= -c -O3  -I$(BASEDIR)/SuperLU_4.3/SRC
-FBFLAGS=  -O3  -132
-LIBS= -mkl $(BASEDIR)/libsuperlu_4.3.a
-FLFLAGS=
+BASEDIR=/people/gjkolasi
+FBFLAGS =  -O0 -132
+
+ifeq ($(UMFPACK_MACRO),-DUSE_UMF_PACK)
+LIBS= $(BASEDIR)/libumfpack.a $(BASEDIR)/libamd.a
+FCFLAGS= -c -O3  -132  $(UMFPACK_MACRO)
+FCCFLAGS= -c -O3
+SUPERLU_FILES=
+UMFPACK_FILES=umfpack.o
+else
+LIBS= $(BASEDIR)/libsuperlu_4.3.a
+FCFLAGS= -c -O3  -132  -I$(BASEDIR)/SuperLU_4.3/SRC $(UMFPACK_MACRO)
+FCCFLAGS= -c -O3 -I$(BASEDIR)/SuperLU_4.3/SRC
+SUPERLU_FILES=zgssv.o
+UMFPACK_FILES=
+endif
+FLIBS=   $(LIBS)  -mkl
+
 endif
 
 
 
-transporter: main.f90 modutils.o modinip.o modjed.o modpop.o spinmodpop.o modspinzrodlo.o modzrodlo.o zgssv.o modsystem.o spinmodsystem.o
-	$(FC) $(FBFLAGS)  main.f90 *.o $(LIBS)   -o $@
+transporter: main.f90 $(UMFPACK_FILES)  modutils.o modinip.o modjed.o modpop.o spinmodpop.o modspinzrodlo.o modzrodlo.o $(SUPERLU_FILES) modsystem.o spinmodsystem.o
+	$(FC) $(FBFLAGS)  main.f90 *.o $(FLIBS)   -o $@
 modinip.o: modinip.F90
 	$(FC) $(FCFLAGS) modinip.F90 -o $@
 modutils.o: modutils.F90
@@ -64,7 +107,8 @@ spinmodsystem.o: spinmodsystem.f90
 zgssv.o:c_fortran_zgssv.c
 	gcc   $(FCCFLAGS) c_fortran_zgssv.c -o $@
 
-
+umfpack.o:umfpack.f90
+	$(FC) $(FCFLAGS) umfpack.f90 -o $@
 
 clean:
 	rm *.o *.mod

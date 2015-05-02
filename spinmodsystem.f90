@@ -2,6 +2,10 @@ module modspinsystem
     use modspinzrodlo
     use modjed
     use modutils
+!DEC$ IF DEFINED  (USE_UMF_PACK)
+    use mUMFPACK
+!DEC$ ENDIF
+
     implicit none
     private
 
@@ -1644,10 +1648,10 @@ module modspinsystem
     ! ==========================================================================
 
     subroutine convert_to_HB(no_vals,rows_cols,out_rows)
-          integer,intent(in)                  :: no_vals
-          integer,intent(in),dimension(:,:)  :: rows_cols
-          integer,intent(inout),dimension(:) :: out_rows
-          integer :: iterator, irow
+          integer,intent(in)                      :: no_vals
+          integer,intent(inout),dimension(:,:)  :: rows_cols
+          integer,intent(inout),dimension(:)    :: out_rows
+          integer :: iterator, irow , from , to
           integer :: i, n
 
           n        = no_vals
@@ -1661,7 +1665,60 @@ module modspinsystem
               endif
           enddo
           out_rows(iterator+1) = n + 1
+
+!DEC$ IF DEFINED  (USE_UMF_PACK)
+          if(TRANS_SOLVER == USE_UMFPACK) then
+              irow = size(out_rows)-1
+                ! sortowanie  kolumn
+              do i = 1 , irow-1
+              from = out_rows(i)
+              to   = out_rows(i+1)-1
+                  call sort_col_vals(IDXA(from:to,2),cmatA(from:to))
+              enddo
+
+              ! przesuwanie indeksow do zera
+              out_rows       = out_rows -1
+              rows_cols(:,2) = rows_cols(:,2) -1
+
+          endif
+!DEC$ ENDIF
+
+
+
       end subroutine convert_to_HB
+
+    subroutine sort_col_vals(cols,vals)
+            integer,intent(inout),dimension(:)    :: cols
+            complex*16,intent(inout),dimension(:) :: vals
+            integer :: tmp_col
+            complex*16 :: tmp_val
+            integer :: i  , j , n
+            logical :: test
+            n = size(cols)
+
+            test = .true.
+
+            ! sortowanie bombelkowe
+            do while(test)
+              test = .false.
+              do i = 1 , n-1
+                if( cols(i) > cols(i+1)  ) then
+                tmp_col   = cols(i)
+                cols(i)   = cols(i+1)
+                cols(i+1) = tmp_col
+
+                tmp_val   = vals(i)
+                vals(i)   = vals(i+1)
+                vals(i+1) = tmp_val
+
+                test = .true.
+                exit
+                endif
+              enddo
+            enddo
+
+
+    end subroutine sort_col_vals
 
 
     subroutine solve_system(no_rows,no_vals,colptr,rowind,values,b,iopt)
@@ -1675,42 +1732,93 @@ module modspinsystem
 
         integer, save    ::  info = 0
         integer*8 , save :: factors = 0
-!
-!      call zhbcode1(n, n, nnz, values, rowind, colptr)
-!
+        complex*16,allocatable,dimension(:),save :: b_sol
+        doubleprecision,save :: total_time
+
+!DEC$ IF DEFINED  (USE_UMF_PACK)
+        ! UMFPACK constants
+        type(c_ptr),save :: symbolic,numeric
+        ! zero-based arrays
+        real(8),save :: control(0:UMFPACK_CONTROL-1),umf_info(0:UMFPACK_INFO-1)
+!DEC$ ENDIF
+
 
         n    = no_rows
         nnz  = no_vals
         ldb  = n
         nrhs = 1
 
-      selectcase (iopt)
+
+!DEC$ IF DEFINED  (USE_UMF_PACK)
+    selectcase (iopt)
       case (1)
-! First, factorize the matrix. The factors are stored in *factors* handle.
-      !iopt = 1
-      call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr , rowind , b, ldb,factors, info )
-!
-      if (info .eq. 0) then
-         write (*,*) 'Factorization succeeded'
-      else
-         write(*,*) 'INFO from factorization = ', info
-      endif
+            allocate(b_sol(size(b)))
+
+            call umf4cdef (control)
+            call umf4csym (n,n, rowind, colptr, values, symbolic, control, umf_info)
+            call umf4cnum (rowind, colptr, values, symbolic, numeric, control, umf_info)
+            call umf4cfsym (symbolic)
+            total_time =  umf_info(UMFPACK_NUMERIC_TIME)+umf_info(UMFPACK_SYMBOLIC_TIME)
+            if (umf_info(UMFPACK_STATUS) .eq. 0) then
+                if(TRANS_DEBUG) then
+                     write (*,*) 'Factorization succeeded. Time needed:',&
+                    total_time, " Mem needed:", umf_info(UMFPACK_PEAK_MEMORY)/8.0/1024/1024 , "[MB]"
+                endif
+            else
+                 write(*,*) 'UMFERROR: INFO from factorization = ', umf_info(UMFPACK_STATUS)
+            endif
+
       case(2)
-! Second, solve the system using the existing factors.
-!      iopt = 2
-      call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind ,  b, ldb,factors, info )
-!
-      if (info .eq. 0) then
-!         write (*,*) 'Solve succeeded'
-!         write (*,*) (b(i), i=1, n)
-      else
-         write(*,*) 'INFO from triangular solve = ', info
-      endif
+            b_sol = 0
+            call umf4csolr (UMFPACK_Aat, rowind, colptr, values, b_sol, b, numeric, control, umf_info)
+            b  = b_sol;
+
+            if (umf_info(UMFPACK_STATUS) .eq. 0) then
+                if(TRANS_DEBUG) then
+                    write (*,*) 'Solve succeeded. Time needed:',umf_info(UMFPACK_SOLVE_WALLTIME)
+                endif
+                total_time  = total_time + umf_info(UMFPACK_SOLVE_WALLTIME)
+            else
+                 write(*,*) 'UMF ERROR: INFO from solve = ', umf_info(UMFPACK_STATUS)
+            endif
+
       case(3)
-! Last, free the storage allocated inside SuperLU
-!      iopt = 3
-      call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind, b, ldb,factors, info )
+            print*,"UMFPACK Solved:"
+            print*,"      Total time needed:",total_time,"[s]"
+            !print*,"      S&N memory needed:",umf_info(UMFPACK_PEAK_MEMORY)/1024/1024,"[MB]"
+            call umf4cfnum (numeric)
+            deallocate(b_sol)
       endselect
+!DEC$ ELSE
+    selectcase (iopt)
+      case (1)
+    ! First, factorize the matrix. The factors are stored in *factors* handle.
+          !iopt = 1
+          call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr , rowind , b, ldb,factors, info )
+    !
+          if (info .eq. 0) then
+             write (*,*) 'Factorization succeeded'
+          else
+             write(*,*) 'INFO from factorization = ', info
+          endif
+      case(2)
+    ! Second, solve the system using the existing factors.
+    !      iopt = 2
+          call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind ,  b, ldb,factors, info )
+    !
+          if (info .eq. 0) then
+    !         write (*,*) 'Solve succeeded'
+    !         write (*,*) (b(i), i=1, n)
+          else
+             write(*,*) 'INFO from triangular solve = ', info
+          endif
+      case(3)
+    ! Last, free the storage allocated inside SuperLU
+    !      iopt = 3
+          call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind, b, ldb,factors, info )
+      endselect
+!DEC$ ENDIF
+
 
       endsubroutine solve_system
 
