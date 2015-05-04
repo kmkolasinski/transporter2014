@@ -53,7 +53,7 @@ module modsystem
     public :: system_inicjalizacja , system_zwalnienie_pamieci , system_inicjalizacja_ukladu
     public :: system_dodaj_abs_zrodlo !(pY1,pYN,pX1,pEf,pKierunek)
     public :: system_zapisz_do_pliku , system_rozwiaz_problem
-    public :: system_gauss , system_dodaj_lorentza , system_dodaj_pionowy_slupek_potencjalu
+    public :: system_gauss , system_dodaj_lorentza , system_dodaj_gaussa , system_dodaj_pionowy_slupek_potencjalu
     public :: system_fermi, system_fermiT , system_dfermidE
     public :: system_widmo,system_zapisz_widmo_do_pliku,Widmo_NoStates,Widmo_Evals,Widmo_Vecs
     public :: ZAPISZ_STANY_WLASNE , ZAPISZ_WIDMO_VRTCAL , ZAPISZ_WIDMO_HRZNTL
@@ -816,6 +816,69 @@ module modsystem
 
 
     end subroutine system_dodaj_lorentza
+
+
+    ! -------------------------------------------------------------------
+    ! Podajemy    w jednostkach SI U w meV dx,dy w nm.
+    ! -------------------------------------------------------------------
+    subroutine system_dodaj_gaussa(U,ldx,ldy,x0,y0)
+        double precision, intent(in) :: U,ldx,ldy,x0,y0
+        integer :: i,j,rozbieg,ni,nj,mi,mj,nrz
+        double precision :: x,y,ddx,ddy,dU,dx0,dy0
+
+        dU = U/1000.0/Rd
+        ddx= ldx*L2LR
+        ddy= ldy*L2LR
+        dx0= x0*L2LR
+        dy0= y0*L2LR
+
+        if(TRANS_DEBUG == 1 ) then
+            print*," Dodawanie Lorentza:",U,ldx,ldy,x0,y0
+            print*," Dodawanie Lorentza[Donor]:",dU,ddx,ddy,dx0,dy0
+        endif
+
+        do i = 1 , NX
+        do j = 1 , NY
+            x = i*DX
+            y = j*DX
+            UTOTAL(i,j) = UTOTAL(i,j) + dU * exp( -0.5*((x-dx0)/ddx)**2 ) * exp( -0.5*((y-dy0)/ddy)**2 )
+        enddo
+        enddo
+
+        ! zerowanie potencjalu przy wejsciach
+        rozbieg = 20
+        do nrz = 1 , no_zrodel
+            select case (zrodla(nrz)%bKierunek)
+            case (ZRODLO_KIERUNEK_PRAWO)
+                ni = zrodla(nrz)%polozenia(1,1) + 1
+                nj = zrodla(nrz)%polozenia(1,2)
+                mi = ni + rozbieg - 1
+                mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
+                UTOTAL(ni:mi,nj:mj) = 0
+            case (ZRODLO_KIERUNEK_LEWO)
+                ni = zrodla(nrz)%polozenia(1,1) - 1
+                nj = zrodla(nrz)%polozenia(1,2)
+                mi = ni - rozbieg + 1
+                mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
+                UTOTAL(mi:ni,nj:mj) = 0
+            case (ZRODLO_KIERUNEK_GORA)
+                ni = zrodla(nrz)%polozenia(1,1)
+                nj = zrodla(nrz)%polozenia(1,2) + 1
+                mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
+                mj = nj + rozbieg - 1
+                UTOTAL(ni:mi,nj:mj) = 0
+            case (ZRODLO_KIERUNEK_DOL)
+                ni = zrodla(nrz)%polozenia(1,1)
+                nj = zrodla(nrz)%polozenia(1,2) - 1
+                mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
+                mj = nj - rozbieg + 1
+                UTOTAL(ni:mi,nj:mj) = 0
+            endselect
+        enddo
+
+
+
+    end subroutine system_dodaj_gaussa
 
     ! -------------------------------------------------------------------
     ! Dodaje prostokatny obszar potencjalu z wygladzonymi za pomoca funkcji Diraca krawedziami.

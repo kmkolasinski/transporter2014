@@ -19,8 +19,9 @@ program transporter
  double precision :: dx   = 2 , pdx , omega ,omega2 , x , y , gamma , xpos
  double precision,dimension(:,:), allocatable  :: TR_MAT
  integer :: i,j, sum_mod
- double precision :: width , G21(-1:1) , G23(-1:1) , sigmax , sigmay , kvec
+ double precision :: width , G21(-1:1) , G23(-1:1) , sigmax , sigmay , kvec , poleB
  type(cspinzrodlo) :: qpc_zrodlo
+ character(len=16) :: file_name
 
 ! -----------------------------------------------
 ! Zmienne wczytywane z config.ini
@@ -48,7 +49,7 @@ call getDoubleValue("Dane","sigmay",sigmay)
 call getDoubleValue("Dane","xpos",xpos)
 
 
-call modjed_ustaw_konwersje_jednostek(0.0465D0,12.0D0);
+call modjed_ustaw_konwersje_jednostek(0.0465D0,1.0D0);
 
 !call modjed_ustaw_InGaAs()
 !call modjed_ustaw_InSb()
@@ -56,27 +57,76 @@ call modjed_ustaw_konwersje_jednostek(0.0465D0,12.0D0);
 dx = atomic_dx
 call spinsystem_inicjalizacja(NX,NY,liczba_zrodel);
 
-
+!do so_alpha3D = 0.0 , 5.0 , 0.5
+!write(file_name,"(f6.4)"),so_alpha3D
+!print*,"alpha_name:","SkanBz_a="//file_name(1:3)//".txt"
+!call modjed_ustaw_konwersje_jednostek(0.0465D0,1.0D0);
+!
+!poleB     = atomic_Bz
+!
+!atomic_Bz =  poleB
+!atomic_Bx =  0.0
+!atomic_By =  0.0
+!call obliczanie_glan_w_QPC("SkanBx_a="//file_name(1:3)//".txt",poleB);
+!
+!
+!atomic_Bz =  0.0
+!atomic_Bx =  poleB
+!atomic_By =  0.0
+!call obliczanie_glan_w_QPC("SkanBy_a="//file_name(1:3)//".txt",poleB);
+!
+!atomic_Bz =  0.0
+!atomic_Bx =  0.0
+!atomic_By =  poleB
+!call obliczanie_glan_w_QPC("SkanBz_a="//file_name(1:3)//".txt",poleB);
+!
+!enddo
+!
+!
+!stop
 
 !
-!open(unit = 222, file= "T.txt" )
+
+call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+
+call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
+open(unit = 222, file= "T.txt" )
 !open(unit = 333, file= "K.txt" )
-!!do  atomic_Bz = -0.0 , 3.0 , 0.05
+!do  sigmay = 50.0 , 0.0 , -0.5
+call utworz_system()
+UTOTAL = 0
+call spinsystem_dodaj_lorentza(2.0D0,10.0D0,10.0D0,nx/2*dx-0,ny/2*dx)
+call spinsystem_zapisz_do_pliku("pot_l.txt",ZAPISZ_POTENCJAL)
+UTOTAL = 0
+call spinsystem_dodaj_gaussa(2.0D0,10.0D0,10.0D0,nx/2*dx-0,ny/2*dx)
+call spinsystem_zapisz_do_pliku("pot_g.txt",ZAPISZ_POTENCJAL)
+stop
 !
 UTOTAL = 0
 do i = 1 , nx
 do j = 1 , ny
     x = i * dx
     y = j * dx
+
+
     UTOTAL(i,j) = gauss_gate(omega,xpos,0.0D0,sigmax,sigmay,x,y) + &
                   gauss_gate(omega,xpos,ny*dx,sigmax,sigmay,x,y)
-    !UTOTAL(i,j) = ( 0.5*(omega/1000.0/Rd)**2*((y-ny*dx/2)**2)  )* &
-    !               exp( -0.5*( x - xpos )**2/(gamma)**2 ) + (omega2/1000.0/Rd)*(y-0*ny*dx/2)
-
-enddo
-enddo
+!    !UTOTAL(i,j) = ( 0.5*(omega/1000.0/Rd)**2*((y-ny*dx/2)**2)  )* &
+!    !               exp( -0.5*( x - xpos )**2/(gamma)**2 ) + (omega2/1000.0/Rd)*(y-0*ny*dx/2)
 !
-!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
+enddo
+enddo
+
+
+!do j = 1 , ny
+!    y = j * dx
+!    write(333,*),j*dx,UTOTAL(nx/2,j)
+!enddo
+
+
+!
+call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
 !call sledzenie_kf()
 !
 !stop
@@ -85,17 +135,15 @@ enddo
 !call zrodla(2)%spinzrodlo_ustaw(NY/2-3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
 call reset_clock()
 
-call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
 
 call qpc_zrodlo%spinzrodlo_ustaw(3,NY-3,nx/2,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
 
 
-!call zrodla(1) %spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"rel1.txt")
+!call zrodla(1)%spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"rel1.txt")
 call qpc_zrodlo%spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"rel1.txt")
 
+stop
 
-    call utworz_system()
     call spinsystem_rozwiaz_problem(1,TR_MAT)
     G21(+1) = 0
     G21(-1) = 0
@@ -105,16 +153,19 @@ call qpc_zrodlo%spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.001D0,atomic_Ef*2,"r
         G21(-1) = G21(-1) + TR_MAT(2,sum_mod+1)
     enddo
 !    print*,"W=",width,"R=",sum(TR_MAT(1,:)),"T=",sum(TR_MAT(2,:))," inne = " , G21(+1)+G21(-1)
-    write(222,"(20e20.6)"),omega,atomic_Bz,sum(TR_MAT(2,:)),sum(TR_MAT(1,:)) !,G21(+1)-G21(-1),G21(+1),G21(-1)
+    write(222,"(20e20.6)"),sigmay,atomic_Bz,sum(TR_MAT(2,:)),sum(TR_MAT(1,:)) !,G21(+1)-G21(-1),G21(+1),G21(-1)
 !    write(333,"(30e20.6)"),omega,atomic_Bz,imag(qpc_zrodlo%ChiKvec(1:qpc_zrodlo%liczba_modow,+1))*L2LR
 
 
+!stop
 
-call qpc_zrodlo%spinzrodlo_zwolnij_pamiec()
+!call qpc_zrodlo%spinzrodlo_zwolnij_pamiec()
 !enddo ! end of B loop
 
     close(222)
     close(333)
+stop
+
 call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
 call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
 call spinsystem_zapisz_do_pliku("j.txt",ZAPISZ_J_ALL)
@@ -134,13 +185,15 @@ contains
 subroutine utworz_system()
     integer :: i,j , wjazd , promien
     ! prosty test
-    wjazd  = nx/4+20
+    wjazd  = nx/2+20
     GFLAGS = B_EMPTY
 !    GFLAGS(nx/8:nx-nx/4,3:NY-3)  = B_NORMAL
 
 
-    wjazd  = nx/2+20
-    GFLAGS = B_EMPTY
+!    wjazd  = nx/2-sigmax/dx
+!    GFLAGS = B_EMPTY
+!    GFLAGS(:,ny/2-sigmay/dx:ny/2+sigmay/dx)  = B_NORMAL
+
 
 !    GFLAGS(nx/8:nx-nx/4,3:NY-3)  = B_NORMAL
 
@@ -161,7 +214,7 @@ subroutine utworz_system()
     GFLAGS(:,1)  = B_DIRICHLET
     GFLAGS(:,NY) = B_DIRICHLET
 !    call system_inicjalizacja_ukladu(wjazd,2,4)
-    call spinsystem_inicjalizacja_ukladu(wjazd,4,4)
+    call spinsystem_inicjalizacja_ukladu(wjazd,0,0)
 end subroutine utworz_system
 
 double precision function gauss_gate(U0,xp,yp,sigmax,sigmay,x,y) result(rval)
@@ -170,6 +223,51 @@ double precision function gauss_gate(U0,xp,yp,sigmax,sigmay,x,y) result(rval)
         rval =  U0 * exp( -(( x - xp)/(2*sigmax))**2 ) * exp( -(( y - yp)/(2*sigmay))**2 )
 
 endfunction gauss_gate
+
+
+subroutine obliczanie_glan_w_QPC(filename,poleB)
+    character(*) :: filename
+    doubleprecision :: poleB
+    double precision :: modyVg(10)
+    integer :: last_modow , inc
+    double precision :: Vg
+
+    last_modow = 0
+    modyVg = 0
+    do Vg = 200.0 , 0.0 , -5.0
+    UTOTAL = 0
+    do i = 1 , nx
+    do j = 1 , ny
+        x = i * dx
+        y = j * dx
+        UTOTAL(i,j) = gauss_gate(Vg,xpos,0.0D0,sigmax,sigmay,x,y) + &
+                      gauss_gate(Vg,xpos,ny*dx,sigmax,sigmay,x,y)
+
+
+    enddo
+    enddo
+
+    call qpc_zrodlo%spinzrodlo_ustaw(3,NY-3,nx/2,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+    print*,Vg,qpc_zrodlo%liczba_modow
+
+    ! zakoncz petle jesli bedzie za duzo modow juz
+    if(qpc_zrodlo%liczba_modow > size(modyVg)) exit
+    ! jesli sie zwiekszyla liczba modow
+    if(last_modow < qpc_zrodlo%liczba_modow) then
+        ! o ile sie zwiekszyla liczba modow
+        inc = qpc_zrodlo%liczba_modow - last_modow
+        modyVg(last_modow+1:last_modow+inc) = Vg
+
+        last_modow = qpc_zrodlo%liczba_modow
+    endif
+
+    enddo
+
+    open(unit = 321, file=filename )
+    write(321,"(400e20.6)"),poleB,modyVg
+    close(321)
+end subroutine obliczanie_glan_w_QPC
+
 
 
 subroutine sledzenie_kf()
