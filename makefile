@@ -13,8 +13,9 @@ zeus:
 # Uzyj polecenia
 # UMFPACK_MACRO=-DUSE_UMF_PACK
 # aby skompilowac z UMFPACKIEM
-UMFPACK_MACRO=
+UMFPACK_MACRO=-DUSE_PARDISO
 #-DUSE_UMF_PACK
+#-DUSE_PARDISO
 
 ifeq ($(C),ifort)
 FC=ifort
@@ -29,6 +30,12 @@ FCFLAGS= -c -O3  -132  $(UMFPACK_MACRO)
 FCCFLAGS= -c -O3
 SUPERLU_FILES=
 UMFPACK_FILES=umfpack.o
+else ifeq ($(UMFPACK_MACRO),-DUSE_PARDISO)
+LIBS=
+FCFLAGS= -c -O3  -132  $(UMFPACK_MACRO)
+FCCFLAGS= -c -O3
+SUPERLU_FILES=
+UMFPACK_FILES=
 else
 LIBS= $(BASEDIR)/libsuperlu_4.3.a
 FCFLAGS= -c -O3  -132  -I$(BASEDIR)/SuperLU_4.3/SRC $(UMFPACK_MACRO)
@@ -49,6 +56,12 @@ FCCFLAGS= -c -O0 -Wall -g
 LIBS= $(BASEDIR)/libumfpack.a $(BASEDIR)/libamd.a
 SUPERLU_FILES=
 UMFPACK_FILES=umfpack.o
+else ifeq ($(UMFPACK_MACRO),-DUSE_PARDISO)
+LIBS=
+FCFLAGS = -c -132 -traceback -O0 -check all -fpe0 -warn -traceback -debug extended  $(UMFPACK_MACRO)
+FCCFLAGS= -c -O0 -Wall -g
+SUPERLU_FILES=
+UMFPACK_FILES=
 else
 LIBS= $(BASEDIR)/libsuperlu_4.3.a
 FCFLAGS = -c -132 -traceback -O0 -check all -fpe0 -warn -traceback -debug extended -I$(BASEDIR)/SuperLU_4.3/SRC $(UMFPACK_MACRO)
@@ -69,6 +82,12 @@ FCFLAGS= -c -O3  -132  $(UMFPACK_MACRO)
 FCCFLAGS= -c -O3
 SUPERLU_FILES=
 UMFPACK_FILES=umfpack.o
+else ifeq ($(UMFPACK_MACRO),-DUSE_PARDISO)
+LIBS=
+FCFLAGS= -c -O3  -132  $(UMFPACK_MACRO)
+FCCFLAGS= -c -O3
+SUPERLU_FILES=
+UMFPACK_FILES=
 else
 LIBS= $(BASEDIR)/libsuperlu_4.3.a
 FCFLAGS= -c -O3  -132  -I$(BASEDIR)/SuperLU_4.3/SRC $(UMFPACK_MACRO)

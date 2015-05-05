@@ -8,7 +8,16 @@ module modspinsystem
 
     implicit none
     private
+!DEC$ IF DEFINED  (USE_PARDISO)
+    EXTERNAL PARDISO_GETENV
+    INTEGER  PARDISO_GETENV
 
+    EXTERNAL PARDISO_SETENV
+    INTEGER  PARDISO_SETENV
+
+    INTEGER PARDISO_OOC_FILE_NAME
+    PARAMETER ( PARDISO_OOC_FILE_NAME = 1 )
+!DEC$ ENDIF
      ! -----------------------------------------------------------------
      ! Zmienne systemowe
      ! -----------------------------------------------------------------
@@ -419,7 +428,7 @@ module modspinsystem
 !        print*,"Pierwszy solve:", get_clock()
         call reset_clock()
 
-        mod_in = 1
+
         do mod_in = 1 , zrodla(nrz)%liczba_modow
         VPHI = 0
         zrodla(nrz)%ck(:)      = 0
@@ -1072,7 +1081,7 @@ module modspinsystem
         do j = 1 , NY
             x = i*atomic_DX
             y = j*atomic_DX
-            UTOTAL(i,j) = UTOTAL(i,j) + dU * exp( -0.5*((x-dx0)/ddx)**2 ) * exp( -0.5*((y-dy0)/ddy)**2 )
+            DUTOTAL(i,j) =  dU * exp( -0.5*((x-dx0)/ddx)**2 ) * exp( -0.5*((y-dy0)/ddy)**2 )
         enddo
         enddo
 
@@ -1730,23 +1739,33 @@ module modspinsystem
           out_rows(iterator+1) = n + 1
 
 !DEC$ IF DEFINED  (USE_UMF_PACK)
-          if(TRANS_SOLVER == USE_UMFPACK) then
-              irow = size(out_rows)-1
-                ! sortowanie  kolumn
-              do i = 1 , irow-1
-              from = out_rows(i)
-              to   = out_rows(i+1)-1
-                  call sort_col_vals(IDXA(from:to,2),cmatA(from:to))
-              enddo
 
-              ! przesuwanie indeksow do zera
-              out_rows       = out_rows -1
-              rows_cols(:,2) = rows_cols(:,2) -1
+          irow = size(out_rows)-1
+            ! sortowanie  kolumn
+          do i = 1 , irow-1
+          from = out_rows(i)
+          to   = out_rows(i+1)-1
+              call sort_col_vals(IDXA(from:to,2),cmatA(from:to))
+          enddo
 
-          endif
+          ! przesuwanie indeksow do zera
+          out_rows       = out_rows -1
+          rows_cols(:,2) = rows_cols(:,2) -1
+
 !DEC$ ENDIF
 
 
+!DEC$ IF DEFINED  (USE_PARDISO)
+
+          irow = size(out_rows)-1
+            ! sortowanie  kolumn
+          do i = 1 , irow-1
+          from = out_rows(i)
+          to   = out_rows(i+1)-1
+              call sort_col_vals(IDXA(from:to,2),cmatA(from:to))
+          enddo
+
+!DEC$ ENDIF
 
       end subroutine convert_to_HB
 
@@ -1795,16 +1814,29 @@ module modspinsystem
 
         integer, save    ::  info = 0
         integer*8 , save :: factors = 0
-        complex*16,allocatable,dimension(:),save :: b_sol
-        doubleprecision,save :: total_time
 
+        doubleprecision,save :: total_time
 !DEC$ IF DEFINED  (USE_UMF_PACK)
         ! UMFPACK constants
         type(c_ptr),save :: symbolic,numeric
         ! zero-based arrays
         real(8),save :: control(0:UMFPACK_CONTROL-1),umf_info(0:UMFPACK_INFO-1)
+        complex*16,allocatable,dimension(:),save :: b_sol
+
 !DEC$ ENDIF
 
+!DEC$ IF DEFINED  (USE_PARDISO)
+
+        INTEGER*8,save  :: pt(64)
+        INTEGER,save    :: phase
+        INTEGER,save    :: maxfct, mnum, mtype, error, msglvl
+        INTEGER,save    :: iparm(64)
+        complex*16,allocatable,dimension(:),save :: b_sol
+
+        INTEGER    ,save::  idum(1)
+        COMPLEX*16 ,save::  ddum(1)
+
+!DEC$ ENDIF
 
         n    = no_rows
         nnz  = no_vals
@@ -1813,19 +1845,19 @@ module modspinsystem
 
 
 !DEC$ IF DEFINED  (USE_UMF_PACK)
-    selectcase (iopt)
+      selectcase (iopt)
       case (1)
+            total_time = get_clock();
             allocate(b_sol(size(b)))
 
             call umf4cdef (control)
             call umf4csym (n,n, rowind, colptr, values, symbolic, control, umf_info)
             call umf4cnum (rowind, colptr, values, symbolic, numeric, control, umf_info)
             call umf4cfsym (symbolic)
-            total_time =  umf_info(UMFPACK_NUMERIC_TIME)+umf_info(UMFPACK_SYMBOLIC_TIME)
+            !total_time =  umf_info(UMFPACK_NUMERIC_TIME)+umf_info(UMFPACK_SYMBOLIC_TIME)
             if (umf_info(UMFPACK_STATUS) .eq. 0) then
                 if(TRANS_DEBUG) then
-                     write (*,*) 'Factorization succeeded. Time needed:',&
-                    total_time, " Mem needed:", umf_info(UMFPACK_PEAK_MEMORY)/8.0/1024/1024 , "[MB]"
+                     write (*,*) 'Factorization succeeded. Mem needed:', umf_info(UMFPACK_PEAK_MEMORY)/8.0/1024/1024 , "[MB]"
                 endif
             else
                  write(*,*) 'UMFERROR: INFO from factorization = ', umf_info(UMFPACK_STATUS)
@@ -1840,48 +1872,138 @@ module modspinsystem
                 if(TRANS_DEBUG) then
                     write (*,*) 'Solve succeeded. Time needed:',umf_info(UMFPACK_SOLVE_WALLTIME)
                 endif
-                total_time  = total_time + umf_info(UMFPACK_SOLVE_WALLTIME)
             else
                  write(*,*) 'UMF ERROR: INFO from solve = ', umf_info(UMFPACK_STATUS)
             endif
 
       case(3)
             print*,"UMFPACK Solved:"
-            print*,"      Total time needed:",total_time,"[s]"
-            !print*,"      S&N memory needed:",umf_info(UMFPACK_PEAK_MEMORY)/1024/1024,"[MB]"
+            print*,"Solve time needed:",get_clock()-total_time,"[s]"
             call umf4cfnum (numeric)
             deallocate(b_sol)
       endselect
-!DEC$ ELSE
-    selectcase (iopt)
+
+!DEC$ ELSE IF DEFINED  (USE_PARDISO)
+
+
+ selectcase (iopt)
       case (1)
-    ! First, factorize the matrix. The factors are stored in *factors* handle.
-          !iopt = 1
-          call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr , rowind , b, ldb,factors, info )
-    !
-          if (info .eq. 0) then
-             write (*,*) 'Factorization succeeded'
-          else
-             write(*,*) 'INFO from factorization = ', info
-          endif
+      allocate(b_sol(size(b)))
+          total_time = get_clock();
+          maxfct = 1 ! in many application this is 1
+          mnum   = 1 ! same here
+          iparm = 0
+          iparm(1) = 1 ! no solver default
+          iparm(2) = 2 ! fill-in reordering from METIS
+          iparm(3) = 1 ! numbers of processors, value of OMP_NUM_THREADS
+          iparm(4) = 0 ! 0 - no iterative-direct algorithm, if 1 multirecursive iterative algorithm 61, 31 para me
+          iparm(5) = 0 ! no user fill-in reducing permutation
+          iparm(6) = 0 ! =0 solution on the first n compoments of x
+          iparm(7) = 0 ! not in use
+          iparm(8) = 2 ! numbers of iterative refinement steps
+          iparm(9) = 0 ! not in use
+          iparm(10) = 10 ! perturbe the pivot elements with 1E-13
+          iparm(11) = 1 ! use nonsymmetric permutation and scaling MPS
+          iparm(12) = 0 ! not in use
+          iparm(13) = 1 ! maximum weighted matching algorithm is switched-on (default for non-symmetric).
+          iparm(14) = 0 ! Output: number of perturbed pivots
+          iparm(15) = 0 ! not in use
+          iparm(16) = 0 ! not in use
+          iparm(17) = 0 ! not in use
+          iparm(18) = -1 ! Output: number of nonzeros in the factor LU
+          iparm(19) = -1 ! Output: Mflops for LU factorization
+          iparm(20) = 0 ! Output: Numbers of CG Iterations
+          iparm(32) = 0 ! if 1 use multirecursive iterative algorithm
+           error = 0 ! initialize error flag
+          msglvl = 0 ! print statistical information
+          mtype     = 13      ! complex unsymmetric matrix
+
+          phase     = 11      ! only reordering and symbolic factorization
+          CALL pardiso (pt, maxfct, mnum, mtype, phase, n, values, rowind, colptr,&
+                       idum, nrhs, iparm, msglvl, ddum, ddum, error)
+
+          !WRITE(*,*) 'Reordering completed ... '
+
+          IF (error .NE. 0) THEN
+            WRITE(*,*) 'The following ERROR was detected: ', error
+            STOP 1
+          END IF
+
+
+          !WRITE(*,*) 'Number of factorization MFLOPS  = ',iparm(19)
+
+    !C.. Factorization.
+          phase     = 22  ! only factorization
+          CALL pardiso (pt, maxfct, mnum, mtype, phase, n, values, rowind, colptr,&
+                       idum, nrhs, iparm, msglvl, ddum, ddum, error)
+
+          !WRITE(*,*) 'Factorization completed ...  '
+          IF (error .NE. 0) THEN
+             WRITE(*,*) 'The following ERROR was detected: ', error
+            STOP 1
+          ENDIF
+
+          WRITE(*,*) 'Peak memory usage   = ',max (IPARM(15), IPARM(16)+IPARM(17))/1024.0,"[MB]"
+
       case(2)
-    ! Second, solve the system using the existing factors.
-    !      iopt = 2
-          call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind ,  b, ldb,factors, info )
-    !
-          if (info .eq. 0) then
-    !         write (*,*) 'Solve succeeded'
-    !         write (*,*) (b(i), i=1, n)
-          else
-             write(*,*) 'INFO from triangular solve = ', info
-          endif
+          b_sol = 0
+    !C.. Back substitution and iterative refinement
+          phase     = 33  ! only factorization
+          iparm(8)  = 3   ! max numbers of iterative refinement steps
+          CALL pardiso (pt, maxfct, mnum, mtype, phase, n, values, rowind, colptr,&
+                       idum, nrhs, iparm, msglvl, b, b_sol, error)
+
+          b  = b_sol;
+          !WRITE(*,*) 'Solve completed ... '
+          IF (error .NE. 0) THEN
+             WRITE(*,*) 'The following ERROR was detected: ', error
+
+          ENDIF
+
       case(3)
-    ! Last, free the storage allocated inside SuperLU
-    !      iopt = 3
-          call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind, b, ldb,factors, info )
+    !C.. Termination and release of memory
+            phase     = -1           ! release internal memory
+            CALL pardiso (pt, maxfct, mnum, mtype, phase, n, ddum, idum, idum,&
+                       idum, nrhs, iparm, msglvl, ddum, ddum, error)
+
+            print*,"PARDISO Solved:"
+            print*,"Solve time needed:",get_clock()-total_time,"[s]"
+            deallocate(b_sol)
+      endselect
+
+
+!DEC$ ELSE
+      selectcase (iopt)
+      case (1)
+      total_time = get_clock();
+! First, factorize the matrix. The factors are stored in *factors* handle.
+      !iopt = 1
+      call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr , rowind , b, ldb,factors, info )
+!
+      if (info .eq. 0) then
+         write (*,*) 'Factorization succeeded'
+      else
+         write(*,*) 'INFO from factorization = ', info
+      endif
+      case(2)
+! Second, solve the system using the existing factors.
+!      iopt = 2
+      call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind ,  b, ldb,factors, info )
+!
+      if (info .eq. 0) then
+!         write (*,*) 'Solve succeeded'
+!         write (*,*) (b(i), i=1, n)
+      else
+         write(*,*) 'INFO from triangular solve = ', info
+      endif
+      case(3)
+! Last, free the storage allocated inside SuperLU
+!      iopt = 3
+      call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind, b, ldb,factors, info )
+      print*,"SuperLU Solved:"
+      print*,"Solve time needed:",get_clock()-total_time,"[s]"
       endselect
 !DEC$ ENDIF
-
 
       endsubroutine solve_system
 

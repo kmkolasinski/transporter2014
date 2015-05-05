@@ -268,14 +268,12 @@ contains
     ! pY1,pYN - polozenia y na siatce numerycznej liczone od 1 do NY, w przypadku zrodla poziomego
     !           oznaczaja polozenia X1 oraz XN
     ! pX1 - polozenie X zrodla, dla zrodla poziomego polozenie Y1
-    ! pDX,pEf,pBz - DX [nm] , Ef [meV] , BZ [T]
     ! pKierunek - enum ZRODLO_KIERUNEK_PRAWO/LEWO/GORA/DOL - ustala w ktora skierowane jest zrodlo
     ! pUTOTAL   - referencja do potencjalu ukladu
     ! --------------------------------------------------------------------
-    subroutine zrodlo_ustaw(zrodlo,pY1,pYN,pX1,pDX,pEf,pBz,pKierunek,pUTOTAL)
+    subroutine zrodlo_ustaw(zrodlo,pY1,pYN,pX1,pKierunek,pUTOTAL)
         class(czrodlo)             ::  zrodlo
         integer,intent(in)         ::  pY1,pYN,pX1
-        doubleprecision,intent(in) ::  pDx,pEf,pBz
         integer,intent(in)         ::  pKierunek ! enum
         double precision,dimension(:,:) :: pUTOTAL ! calkowity potencjal w [meV]
         double precision :: pUvec(pYN - pY1 + 1)
@@ -288,9 +286,9 @@ contains
         ! zmienne pomocnicze
         integer :: i,j,k,ntmp
 
-        dx  = pdx*L2LR    ! konwertujemy do jednostek donorowych
-        Ef  = pEf/1000.0/Rd
-        BZ  = BtoDonorB(pBz)
+        dx  = atomic_DX*L2LR    ! konwertujemy do jednostek donorowych
+        Ef  = atomic_Ef/1000.0/Rd
+        BZ  = BtoDonorB(atomic_Bz)
 
         print*,"Okres B",DonorBtoB(2*3.14159/dx/dx) , "[T]"
 
@@ -302,12 +300,12 @@ contains
             do i = 1 , N
                 pUVEC(i) = pUTOTAL(pX1,pY1 + i - 1)
             enddo
-            call modpop_calc_modes_from_wfm(pDX,N,pEf,pBz,pUVEC,.true.)
+            call modpop_calc_modes_from_wfm(atomic_DX,N,atomic_Ef,atomic_Bz,pUVEC,.true.)
         else ! dla zrodel gora dol
             do i = 1 , N
                 pUVEC(i) = pUTOTAL(pY1 + i - 1,pX1)
             enddo
-            call modpop_calc_modes_from_wfm(pDX,N,pEf,pBz,pUVEC,.false.)
+            call modpop_calc_modes_from_wfm(atomic_DX,N,atomic_Ef,atomic_Bz,pUVEC,.false.)
         endif
 
         call modpop_liczba_podpasm(lModow,lModowEvan)
@@ -346,6 +344,9 @@ contains
             zrodlo%r2             = (/pYN,pX1/)*DX
             zrodlo%hnx            = (pYN + pY1)/2.0*DX
         endif
+
+
+        if(lModow == 0)  return
 
 
         call zrodlo%zrodlo_wypisz_info()

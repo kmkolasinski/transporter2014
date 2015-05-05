@@ -1,8 +1,21 @@
 module modsystem
     use modzrodlo
+!DEC$ IF DEFINED  (USE_UMF_PACK)
+    use mUMFPACK
+!DEC$ ENDIF
     implicit none
-    private
 
+    private
+!DEC$ IF DEFINED  (USE_PARDISO)
+    EXTERNAL PARDISO_GETENV
+    INTEGER  PARDISO_GETENV
+
+    EXTERNAL PARDISO_SETENV
+    INTEGER  PARDISO_SETENV
+
+    INTEGER PARDISO_OOC_FILE_NAME
+    PARAMETER ( PARDISO_OOC_FILE_NAME = 1 )
+!DEC$ ENDIF
      ! -----------------------------------------------------------------
      ! Zmienne systemowe
      ! -----------------------------------------------------------------
@@ -22,6 +35,7 @@ module modsystem
     integer,dimension(:,:), allocatable           :: ZFLAGS ! ZAWIERA FLAGI WEJSC WARTOSC FLAGI OZNACZA NUMER WEJSCIA - 1,2, ...
     integer,dimension(:,:), allocatable           :: GINDEX ! INDEKSUJE GEOMETRIE UKLADU (-1) OZNACZA POZA UKLADEM
     double precision,dimension(:,:), allocatable  :: UTOTAL ! MACIERZ POTENCJALU EFEKTYWNEGO
+    double precision,dimension(:,:), allocatable  :: DUTOTAL ! MACIERZ POTENCJALU EFEKTYWNEGO w jednostkach donorowych
     complex*16,dimension(:),allocatable           :: CMATA  ! GLOWNA MACIERZ PROGRAMU W FORMACIE (ROW,COL,VALS), TUTAJ TYLKO VALS
     integer,dimension(:,:),allocatable            :: IDXA   ! INDEKSY MACIERZY (ROW,COL)
     complex*16,dimension(:),allocatable           :: VPHI   ! SZUKANA FUNKCJA FALOWA, PRZELICZANA POTEM NA LDOS
@@ -69,10 +83,9 @@ module modsystem
     ! pLiczbaZrodel - LICZBA WSZYTKICH ZRODEL W UKLADZIE
     ! pDX           - Podajemy krok siatki w [nm]
     ! ----------------------------------------------------------
-    subroutine system_inicjalizacja(pnx,pny,pLiczbaZrodel,pdx)
+    subroutine system_inicjalizacja(pnx,pny,pLiczbaZrodel)
         integer,intent(in)             :: pnx,pny
         integer,intent(in)             :: pLiczbaZrodel
-        double precision, intent(in)   :: pdx
 
         if(TRANS_DEBUG==.true.) then
             print*,"System: Inicjalizacja:";
@@ -82,13 +95,14 @@ module modsystem
         endif
         nx = pnx
         ny = pny
-        dx = pdx*L2LR
+        dx = atomic_DX*L2LR
 
         ! alokacja pamieci
         allocate( GFLAGS(nx,ny))
         allocate( ZFLAGS(nx,ny))
         allocate( GINDEX(nx,ny))
         allocate( UTOTAL(nx,ny))
+        allocate( DUTOTAL(nx,ny))
         allocate(    PHI(nx,ny))
         allocate(CURRENT(nx,ny))
         allocate(CURRENTX(nx,ny))
@@ -97,6 +111,7 @@ module modsystem
         ZFLAGS = 0
         GINDEX = 0
         UTOTAL = 0
+        DUTOTAL = 0
         ! Tworzymy uklad...
         no_zrodel = pLiczbaZrodel
         allocate(zrodla(no_zrodel))
@@ -160,6 +175,7 @@ module modsystem
         if(allocated(ZFLAGS))   deallocate(ZFLAGS)
         if(allocated(GINDEX))   deallocate(GINDEX)
         if(allocated(UTOTAL))   deallocate(UTOTAL)
+        if(allocated(DUTOTAL))   deallocate(DUTOTAL)
         if(allocated(CURRENT))  deallocate(CURRENT)
         if(allocated(CURRENTX))  deallocate(CURRENTX)
         if(allocated(CURRENTY))  deallocate(CURRENTY)
@@ -350,6 +366,8 @@ module modsystem
 
         TRANS_R = 0
         TRANS_T = 0
+
+        DUTOTAL = UTOTAL/1000.0/Rd
         ! --------------------------------------------------------------------
         !
         ! --------------------------------------------------------------------
@@ -465,7 +483,7 @@ module modsystem
                     itmp = itmp + 1
 
                 elseif( GFLAGS(i,j) == B_NORMAL) then
-                    cmatA(itmp)   = CMPLX( 2.0/DX/DX + UTOTAL(i,j) - Ef )
+                    cmatA(itmp)   = CMPLX( 2.0/DX/DX + DUTOTAL(i,j) - Ef )
                     idxA (itmp,1) = GINDEX(i,j)
                     idxA (itmp,2) = GINDEX(i,j)
                     itmp = itmp + 1
@@ -578,7 +596,7 @@ module modsystem
                     pnj   = zrodla(nzrd)%polozenia(nn,2)
                     if( ln == nn  ) then
 
-                        cmatA(itmp)   = CMPLX( 2.0/DX/DX + UTOTAL(i,j) - Ef ) &
+                        cmatA(itmp)   = CMPLX( 2.0/DX/DX + DUTOTAL(i,j) - Ef ) &
                            & + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
                         idxA (itmp,1) = GINDEX(ni,nj)
                         idxA (itmp,2) = GINDEX(ni,pnj)
@@ -617,7 +635,7 @@ module modsystem
 
                     if( ln == nn  ) then
 
-                        cmatA(itmp)   = CMPLX( 2.0/DX/DX + UTOTAL(i,j) - Ef ) &
+                        cmatA(itmp)   = CMPLX( 2.0/DX/DX + DUTOTAL(i,j) - Ef ) &
                            & + post*zrodla(nzrd)%zrodlo_alfa_v_i(dx,ln,nn)
                         idxA (itmp,1) = GINDEX(ni,nj)
                         idxA (itmp,2) = GINDEX(pni,nj)
@@ -763,22 +781,22 @@ module modsystem
 
 
 
-        dU = U/1000.0/Rd
-        ddx= ldx*L2LR
-        ddy= ldy*L2LR
-        dx0= x0*L2LR
-        dy0= y0*L2LR
+        dU = U!/1000.0/Rd
+        ddx= ldx!*L2LR
+        ddy= ldy!*L2LR
+        dx0= x0!*L2LR
+        dy0= y0!*L2LR
 
         if(TRANS_DEBUG == 1 ) then
             print*," Dodawanie Lorentza:",U,ldx,ldy,x0,y0
-            print*," Dodawanie Lorentza[Donor]:",dU,ddx,ddy,dx0,dy0
+
         endif
 
         do i = 1 , NX
         do j = 1 , NY
-            x = i*DX
-            y = j*DX
-            UTOTAL(i,j) = UTOTAL(i,j) + dU/( 1 + ((x-dx0)/ddx)**2 + ((y-dy0)/ddy)**2 )
+            x = i*atomic_DX
+            y = j*atomic_DX
+            DUTOTAL(i,j) =  dU/( 1 + ((x-dx0)/ddx)**2 + ((y-dy0)/ddy)**2 )
         enddo
         enddo
 
@@ -791,29 +809,29 @@ module modsystem
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni + rozbieg - 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-                UTOTAL(ni:mi,nj:mj) = 0
+                DUTOTAL(ni:mi,nj:mj) = 0
             case (ZRODLO_KIERUNEK_LEWO)
                 ni = zrodla(nrz)%polozenia(1,1) - 1
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni - rozbieg + 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-                UTOTAL(mi:ni,nj:mj) = 0
+                DUTOTAL(mi:ni,nj:mj) = 0
             case (ZRODLO_KIERUNEK_GORA)
                 ni = zrodla(nrz)%polozenia(1,1)
                 nj = zrodla(nrz)%polozenia(1,2) + 1
                 mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
                 mj = nj + rozbieg - 1
-                UTOTAL(ni:mi,nj:mj) = 0
+                DUTOTAL(ni:mi,nj:mj) = 0
             case (ZRODLO_KIERUNEK_DOL)
                 ni = zrodla(nrz)%polozenia(1,1)
                 nj = zrodla(nrz)%polozenia(1,2) - 1
                 mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
                 mj = nj - rozbieg + 1
-                UTOTAL(ni:mi,nj:mj) = 0
+                DUTOTAL(ni:mi,nj:mj) = 0
             endselect
         enddo
 
-
+        UTOTAL = UTOTAL + DUTOTAL
 
     end subroutine system_dodaj_lorentza
 
@@ -826,22 +844,22 @@ module modsystem
         integer :: i,j,rozbieg,ni,nj,mi,mj,nrz
         double precision :: x,y,ddx,ddy,dU,dx0,dy0
 
-        dU = U/1000.0/Rd
-        ddx= ldx*L2LR
-        ddy= ldy*L2LR
-        dx0= x0*L2LR
-        dy0= y0*L2LR
+        dU = U!/1000.0/Rd
+        ddx= ldx!*L2LR
+        ddy= ldy!*L2LR
+        dx0= x0!*L2LR
+        dy0= y0!*L2LR
 
         if(TRANS_DEBUG == 1 ) then
             print*," Dodawanie Lorentza:",U,ldx,ldy,x0,y0
-            print*," Dodawanie Lorentza[Donor]:",dU,ddx,ddy,dx0,dy0
+
         endif
 
         do i = 1 , NX
         do j = 1 , NY
-            x = i*DX
-            y = j*DX
-            UTOTAL(i,j) = UTOTAL(i,j) + dU * exp( -0.5*((x-dx0)/ddx)**2 ) * exp( -0.5*((y-dy0)/ddy)**2 )
+            x = i*atomic_DX
+            y = j*atomic_DX
+            DUTOTAL(i,j) =  dU * exp( -0.5*((x-dx0)/ddx)**2 ) * exp( -0.5*((y-dy0)/ddy)**2 )
         enddo
         enddo
 
@@ -854,29 +872,29 @@ module modsystem
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni + rozbieg - 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-                UTOTAL(ni:mi,nj:mj) = 0
+                DUTOTAL(ni:mi,nj:mj) = 0
             case (ZRODLO_KIERUNEK_LEWO)
                 ni = zrodla(nrz)%polozenia(1,1) - 1
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni - rozbieg + 1
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
-                UTOTAL(mi:ni,nj:mj) = 0
+                DUTOTAL(mi:ni,nj:mj) = 0
             case (ZRODLO_KIERUNEK_GORA)
                 ni = zrodla(nrz)%polozenia(1,1)
                 nj = zrodla(nrz)%polozenia(1,2) + 1
                 mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
                 mj = nj + rozbieg - 1
-                UTOTAL(ni:mi,nj:mj) = 0
+                DUTOTAL(ni:mi,nj:mj) = 0
             case (ZRODLO_KIERUNEK_DOL)
                 ni = zrodla(nrz)%polozenia(1,1)
                 nj = zrodla(nrz)%polozenia(1,2) - 1
                 mi = zrodla(nrz)%polozenia(zrodla(nrz)%N,1)
                 mj = nj - rozbieg + 1
-                UTOTAL(ni:mi,nj:mj) = 0
+                DUTOTAL(ni:mi,nj:mj) = 0
             endselect
         enddo
 
-
+        UTOTAL = UTOTAL + DUTOTAL
 
     end subroutine system_dodaj_gaussa
 
@@ -898,14 +916,14 @@ module modsystem
 
         do i = 1 , nx
         do j = 1 , ny
-            xp = i * dx * LR2L
-            yp = j * dx * LR2L
+            xp = i * atomic_DX
+            yp = j * atomic_DX
 
             pvalue = system_fermiT(xp,xpos-width/2,temp) + (1 - system_fermiT(xp,xpos+width/2,temp))
             pvalue = 1 - pvalue
             pvalue = pvalue * ( system_fermiT(-yp,-ypos1,temp) * system_fermiT(yp,ypos2,temp)   )
 
-            UTOTAL(i,j) = UTOTAL(i,j) + pvalue * amp / Rd / 1000.0;
+            UTOTAL(i,j) = UTOTAL(i,j) + pvalue * amp !/ Rd / 1000.0;
         enddo
         enddo
     end subroutine system_dodaj_pionowy_slupek_potencjalu
@@ -984,7 +1002,7 @@ module modsystem
     case(ZAPISZ_POTENCJAL)
         do i = x1 , x2
         do j = y1 , y2
-                fval = UTOTAL(i,j)*Rd*1000.0
+                fval = UTOTAL(i,j)!*Rd*1000.0
                 write(86554,"(3f20.6)"),i*DX*Lr2L,j*DX*Lr2L,fval
         enddo
             write(86554,*),""
@@ -1209,7 +1227,7 @@ module modsystem
         endif
         if(WINDEX(i,j) > 0) then
 
-                cmatA(itmp)   = CMPLX( 2.0/DX/DX + UTOTAL(i,j) )
+                cmatA(itmp)   = CMPLX( 2.0/DX/DX + DUTOTAL(i,j) )
                 idxA (itmp,1) = WINDEX(i,j)
                 idxA (itmp,2) = WINDEX(i,j)
                 itmp = itmp + 1
@@ -1396,9 +1414,9 @@ module modsystem
 
     subroutine convert_to_HB(no_vals,rows_cols,out_rows)
           integer,intent(in)                  :: no_vals
-          integer,intent(in),dimension(:,:)  :: rows_cols
+          integer,intent(inout),dimension(:,:)  :: rows_cols
           integer,intent(inout),dimension(:) :: out_rows
-          integer :: iterator, irow
+          integer :: iterator, irow ,  from , to
           integer :: i, n
 
           n        = no_vals
@@ -1412,7 +1430,69 @@ module modsystem
               endif
           enddo
           out_rows(iterator+1) = n + 1
+
+
+!DEC$ IF DEFINED  (USE_UMF_PACK)
+      irow = size(out_rows)-1
+        ! sortowanie  kolumn
+      do i = 1 , irow-1
+      from = out_rows(i)
+      to   = out_rows(i+1)-1
+          call sort_col_vals(IDXA(from:to,2),cmatA(from:to))
+      enddo
+
+      ! przesuwanie indeksow do zera
+      out_rows       = out_rows -1
+      rows_cols(:,2) = rows_cols(:,2) -1
+!DEC$ ENDIF
+
+!DEC$ IF DEFINED  (USE_PARDISO)
+
+      irow = size(out_rows)-1
+        ! sortowanie  kolumn
+      do i = 1 , irow-1
+      from = out_rows(i)
+      to   = out_rows(i+1)-1
+          call sort_col_vals(IDXA(from:to,2),cmatA(from:to))
+      enddo
+
+!DEC$ ENDIF
+
+
+
       end subroutine convert_to_HB
+
+    subroutine sort_col_vals(cols,vals)
+            integer,intent(inout),dimension(:)    :: cols
+            complex*16,intent(inout),dimension(:) :: vals
+            integer :: tmp_col
+            complex*16 :: tmp_val
+            integer :: i  , j , n
+            logical :: test
+            n = size(cols)
+
+            test = .true.
+
+            ! sortowanie bombelkowe
+            do while(test)
+              test = .false.
+              do i = 1 , n-1
+                if( cols(i) > cols(i+1)  ) then
+                tmp_col   = cols(i)
+                cols(i)   = cols(i+1)
+                cols(i+1) = tmp_col
+
+                tmp_val   = vals(i)
+                vals(i)   = vals(i+1)
+                vals(i+1) = tmp_val
+
+                test = .true.
+                exit
+                endif
+              enddo
+            enddo
+    end subroutine sort_col_vals
+
 
 
     subroutine solve_system(no_rows,no_vals,colptr,rowind,values,b,iopt)
@@ -1426,9 +1506,29 @@ module modsystem
 
         integer, save    ::  info = 0
         integer*8 , save :: factors = 0
-!
-!      call zhbcode1(n, n, nnz, values, rowind, colptr)
-!
+
+        doubleprecision,save :: total_time
+!DEC$ IF DEFINED  (USE_UMF_PACK)
+        ! UMFPACK constants
+        type(c_ptr),save :: symbolic,numeric
+        ! zero-based arrays
+        real(8),save :: control(0:UMFPACK_CONTROL-1),umf_info(0:UMFPACK_INFO-1)
+        complex*16,allocatable,dimension(:),save :: b_sol
+
+!DEC$ ENDIF
+
+!DEC$ IF DEFINED  (USE_PARDISO)
+
+        INTEGER*8,save  :: pt(64)
+        INTEGER,save    :: phase
+        INTEGER,save    :: maxfct, mnum, mtype, error, msglvl
+        INTEGER,save    :: iparm(64)
+        complex*16,allocatable,dimension(:),save :: b_sol
+
+        INTEGER    ,save::  idum(1)
+        COMPLEX*16 ,save::  ddum(1)
+
+!DEC$ ENDIF
 
         n    = no_rows
         nnz  = no_vals
@@ -1437,10 +1537,137 @@ module modsystem
 
 
 !DEC$ IF DEFINED  (USE_UMF_PACK)
+      selectcase (iopt)
+      case (1)
+            total_time = get_clock();
+            allocate(b_sol(size(b)))
+
+            call umf4cdef (control)
+            call umf4csym (n,n, rowind, colptr, values, symbolic, control, umf_info)
+            call umf4cnum (rowind, colptr, values, symbolic, numeric, control, umf_info)
+            call umf4cfsym (symbolic)
+            !total_time =  umf_info(UMFPACK_NUMERIC_TIME)+umf_info(UMFPACK_SYMBOLIC_TIME)
+            if (umf_info(UMFPACK_STATUS) .eq. 0) then
+                if(TRANS_DEBUG) then
+                     write (*,*) 'Factorization succeeded. Mem needed:', umf_info(UMFPACK_PEAK_MEMORY)/8.0/1024/1024 , "[MB]"
+                endif
+            else
+                 write(*,*) 'UMFERROR: INFO from factorization = ', umf_info(UMFPACK_STATUS)
+            endif
+
+      case(2)
+            b_sol = 0
+            call umf4csolr (UMFPACK_Aat, rowind, colptr, values, b_sol, b, numeric, control, umf_info)
+            b  = b_sol;
+
+            if (umf_info(UMFPACK_STATUS) .eq. 0) then
+                if(TRANS_DEBUG) then
+                    write (*,*) 'Solve succeeded. Time needed:',umf_info(UMFPACK_SOLVE_WALLTIME)
+                endif
+            else
+                 write(*,*) 'UMF ERROR: INFO from solve = ', umf_info(UMFPACK_STATUS)
+            endif
+
+      case(3)
+            print*,"UMFPACK Solved:"
+            print*,"Solve time needed:",get_clock()-total_time,"[s]"
+            call umf4cfnum (numeric)
+            deallocate(b_sol)
+      endselect
+
+!DEC$ ELSE IF DEFINED  (USE_PARDISO)
+
+
+ selectcase (iopt)
+      case (1)
+      allocate(b_sol(size(b)))
+          total_time = get_clock();
+          maxfct = 1 ! in many application this is 1
+          mnum   = 1 ! same here
+          iparm = 0
+          iparm(1) = 1 ! no solver default
+          iparm(2) = 2 ! fill-in reordering from METIS
+          iparm(3) = 1 ! numbers of processors, value of OMP_NUM_THREADS
+          iparm(4) = 0 ! 0 - no iterative-direct algorithm, if 1 multirecursive iterative algorithm 61, 31 para me
+          iparm(5) = 0 ! no user fill-in reducing permutation
+          iparm(6) = 0 ! =0 solution on the first n compoments of x
+          iparm(7) = 0 ! not in use
+          iparm(8) = 2 ! numbers of iterative refinement steps
+          iparm(9) = 0 ! not in use
+          iparm(10) = 10 ! perturbe the pivot elements with 1E-13
+          iparm(11) = 1 ! use nonsymmetric permutation and scaling MPS
+          iparm(12) = 0 ! not in use
+          iparm(13) = 1 ! maximum weighted matching algorithm is switched-on (default for non-symmetric).
+          iparm(14) = 0 ! Output: number of perturbed pivots
+          iparm(15) = 0 ! not in use
+          iparm(16) = 0 ! not in use
+          iparm(17) = 0 ! not in use
+          iparm(18) = -1 ! Output: number of nonzeros in the factor LU
+          iparm(19) = -1 ! Output: Mflops for LU factorization
+          iparm(20) = 0 ! Output: Numbers of CG Iterations
+          iparm(32) = 0 ! if 1 use multirecursive iterative algorithm
+           error = 0 ! initialize error flag
+          msglvl = 0 ! print statistical information
+          mtype     = 13      ! complex unsymmetric matrix
+
+          phase     = 11      ! only reordering and symbolic factorization
+          CALL pardiso (pt, maxfct, mnum, mtype, phase, n, values, rowind, colptr,&
+                       idum, nrhs, iparm, msglvl, ddum, ddum, error)
+
+          !WRITE(*,*) 'Reordering completed ... '
+
+          IF (error .NE. 0) THEN
+            WRITE(*,*) 'The following ERROR was detected: ', error
+            STOP 1
+          END IF
+
+
+          !WRITE(*,*) 'Number of factorization MFLOPS  = ',iparm(19)
+
+    !C.. Factorization.
+          phase     = 22  ! only factorization
+          CALL pardiso (pt, maxfct, mnum, mtype, phase, n, values, rowind, colptr,&
+                       idum, nrhs, iparm, msglvl, ddum, ddum, error)
+
+          !WRITE(*,*) 'Factorization completed ...  '
+          IF (error .NE. 0) THEN
+             WRITE(*,*) 'The following ERROR was detected: ', error
+            STOP 1
+          ENDIF
+
+          WRITE(*,*) 'Peak memory usage   = ',max (IPARM(15), IPARM(16)+IPARM(17))/1024.0,"[MB]"
+
+      case(2)
+          b_sol = 0
+    !C.. Back substitution and iterative refinement
+          phase     = 33  ! only factorization
+          iparm(8)  = 3   ! max numbers of iterative refinement steps
+          CALL pardiso (pt, maxfct, mnum, mtype, phase, n, values, rowind, colptr,&
+                       idum, nrhs, iparm, msglvl, b, b_sol, error)
+
+          b  = b_sol;
+          !WRITE(*,*) 'Solve completed ... '
+          IF (error .NE. 0) THEN
+             WRITE(*,*) 'The following ERROR was detected: ', error
+
+          ENDIF
+
+      case(3)
+    !C.. Termination and release of memory
+            phase     = -1           ! release internal memory
+            CALL pardiso (pt, maxfct, mnum, mtype, phase, n, ddum, idum, idum,&
+                       idum, nrhs, iparm, msglvl, ddum, ddum, error)
+
+            print*,"PARDISO Solved:"
+            print*,"Solve time needed:",get_clock()-total_time,"[s]"
+            deallocate(b_sol)
+      endselect
+
 
 !DEC$ ELSE
       selectcase (iopt)
       case (1)
+      total_time = get_clock();
 ! First, factorize the matrix. The factors are stored in *factors* handle.
       !iopt = 1
       call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr , rowind , b, ldb,factors, info )
@@ -1465,6 +1692,8 @@ module modsystem
 ! Last, free the storage allocated inside SuperLU
 !      iopt = 3
       call c_fortran_zgssv( iopt, n, nnz, nrhs, values, colptr,rowind, b, ldb,factors, info )
+      print*,"SuperLU Solved:"
+      print*,"Solve time needed:",get_clock()-total_time,"[s]"
       endselect
 !DEC$ ENDIF
 
