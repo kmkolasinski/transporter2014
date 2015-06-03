@@ -36,7 +36,7 @@ module modspinsystem
     integer,dimension(:,:), allocatable           :: ZFLAGS ! ZAWIERA FLAGI WEJSC WARTOSC FLAGI OZNACZA NUMER WEJSCIA - 1,2, ...
     integer,dimension(:,:,:), allocatable         :: GINDEX ! INDEKSUJE GEOMETRIE UKLADU (-1) OZNACZA POZA UKLADEM, jako trzeci argument dochodzi spin -1,+1
     double precision,dimension(:,:), allocatable  :: UTOTAL ! MACIERZ POTENCJALU EFEKTYWNEGO
-    double precision,dimension(:,:), allocatable  :: DUTOTAL ! MACIERZ POTENCJALU EFEKTYWNEGO w jednostkach donorowych
+
     double precision,dimension(:,:), allocatable  :: DEX,DEY ! MACIERZ POLA ELEKTRYCZNEGO w jednostkach donorowych
     complex*16,dimension(:),allocatable           :: CMATA  ! GLOWNA MACIERZ PROGRAMU W FORMACIE (ROW,COL,VALS), TUTAJ TYLKO VALS
     integer,dimension(:,:),allocatable            :: IDXA   ! INDEKSY MACIERZY (ROW,COL)
@@ -49,9 +49,9 @@ module modspinsystem
 !    complex*16,dimension(:,:,:),allocatable       :: WAVEFUNC  ! FUNKCJA FALOWA ZAPISANA NA DWUWYMIAROWEJ MACIERZY, TRZECIA KOLUMNA TO N-TY MOD
 
     ! Problem wlasny
-!    integer                                       :: Widmo_NoStates
-!    double precision,dimension(:), allocatable          :: Widmo_Evals
-!    complex*16,dimension(:,:) ,allocatable        :: Widmo_Vecs
+    integer                                       :: Widmo_NoStates
+    double precision,dimension(:), allocatable    :: Widmo_Evals
+    complex*16,dimension(:,:) ,allocatable        :: Widmo_Vecs
 
     ! rodzaje zapisu do pliku
     ENUM,BIND(C)
@@ -72,14 +72,14 @@ module modspinsystem
 
     public :: ZAPISZ_FLAGI , ZAPISZ_POTENCJAL , ZAPISZ_KONTUR , ZAPISZ_INDEKSY , ZAPISZ_PHI
     public :: ZAPISZ_J_ALL, ZAPISZ_DIVJ, ZAPISZ_J_TOTAL, ZAPISZ_WAVEFUNC , ZAPISZ_POLARYZACJE
-    public :: zrodla, UTOTAL, GFLAGS, GINDEX !,PHI
+    public :: zrodla, UTOTAL, GFLAGS, GINDEX  !,PHI
     public :: spinsystem_inicjalizacja , spinsystem_zwalnienie_pamieci , spinsystem_inicjalizacja_ukladu
 !    public :: system_dodaj_abs_zrodlo !(pY1,pYN,pX1,pEf,pKierunek)
     public :: spinsystem_zapisz_do_pliku , spinsystem_rozwiaz_problem
     public :: spinsystem_gauss, spinsystem_dodaj_lorentza , spinsystem_dodaj_gaussa, spinsystem_dodaj_pionowy_slupek_potencjalu
     public :: spinsystem_fermi, spinsystem_fermiT, spinsystem_dfermidE
-!    public :: system_widmo,system_zapisz_widmo_do_pliku,Widmo_NoStates,Widmo_Evals,Widmo_Vecs
-!    public :: ZAPISZ_STANY_WLASNE , ZAPISZ_WIDMO_VRTCAL , ZAPISZ_WIDMO_HRZNTL
+    public :: spinsystem_widmo,spinsystem_zapisz_widmo_do_pliku,Widmo_NoStates,Widmo_Evals,Widmo_Vecs
+    public :: ZAPISZ_STANY_WLASNE , ZAPISZ_WIDMO_VRTCAL , ZAPISZ_WIDMO_HRZNTL
 !    public :: TRANS_T,TRANS_R
     contains
 
@@ -112,6 +112,7 @@ module modspinsystem
         allocate( GINDEX(nx,ny,-1:1))
         allocate( UTOTAL(nx,ny))
         allocate(DUTOTAL(nx,ny))
+        allocate(SUTOTAL(nx,ny,-1:1))
         allocate(    PHI(nx,ny,-1:1))
         allocate(    DEX(nx,ny))
         allocate(    DEY(nx,ny))
@@ -126,6 +127,7 @@ module modspinsystem
         GINDEX = 0
         UTOTAL = 0
         DUTOTAL= 0
+        SUTOTAL= 0
         PHI    = 0
         ! Tworzymy uklad...
         no_zrodel = pLiczbaZrodel
@@ -189,6 +191,7 @@ module modspinsystem
         if(allocated(GINDEX))   deallocate(GINDEX)
         if(allocated(UTOTAL))   deallocate(UTOTAL)
         if(allocated(DUTOTAL))  deallocate(DUTOTAL)
+        if(allocated(SUTOTAL))  deallocate(SUTOTAL)
         if(allocated(CURRENT))  deallocate(CURRENT)
         if(allocated(CURRENTXY))deallocate(CURRENTXY)
         if(allocated(POLARYZACJE))deallocate(POLARYZACJE)
@@ -245,7 +248,6 @@ module modspinsystem
                 mj = zrodla(nrz)%polozenia(zrodla(nrz)%N,2)
                 GFLAGS(ni:mi,nj:mj) = B_NORMAL
             case (ZRODLO_KIERUNEK_LEWO)
-                print*,"tutaj moze byc zle liczone"
                 ni = zrodla(nrz)%polozenia(1,1) - 1
                 nj = zrodla(nrz)%polozenia(1,2)
                 mi = ni - in_len + 1
@@ -550,7 +552,7 @@ module modspinsystem
     ! ---------------------------------------------------------------------
     complex*16 function T0(d,s,u,v) result(rval)
         integer :: d,s,u,v
-        rval = 4 / 2.0 / DX / DX + DUTOTAL(u,v) + 0.5*s*G_LAN*M_EFF*BZ - Ef
+        rval = 4 / 2.0 / DX / DX + DUTOTAL(u,v) + SUTOTAL(u,v,s) + 0.5*s*G_LAN*M_EFF*BZ - Ef
     end function T0
 
     complex*16 function Tu(d,s,u,v) result(rval)
@@ -1270,7 +1272,7 @@ module modspinsystem
         do i = x1 , x2
         do j = y1 , y2
                 fval = UTOTAL(i,j)
-                write(86554,"(3f20.6)"),i*atomic_DX,j*atomic_DX,fval
+                write(86554,"(4f20.6)"),i*atomic_DX,j*atomic_DX,fval + SUTOTAL(i,j,1)*Rd*1000,fval + SUTOTAL(i,j,-1)*Rd*1000
         enddo
             write(86554,*),""
         enddo
@@ -1348,14 +1350,13 @@ module modspinsystem
             write(86554,*),""
         enddo
     case(ZAPISZ_STANY_WLASNE)
-        print*,"brak stanow wlasnych"
         do i = x1 , x2
         do j = y1 , y2
-!                if(GFLAGS(i,j) == B_NORMAL) then
-!                    write(86554,"(1000e20.6)"),i*atomic_DX,j*atomic_DX,abs(Widmo_Vecs(GINDEX(i,j),1:Widmo_NoStates))**2
-!                else
-!                    write(86554,"(1000e20.6)"),i*atomic_DX,j*atomic_DX,abs(Widmo_Vecs(1,1:Widmo_NoStates))*0
-!                endif
+        if(GFLAGS(i,j) == B_NORMAL) then
+            write(86554,"(2000e20.6)"),i*atomic_DX,j*atomic_DX,abs(Widmo_Vecs(GINDEX(i,j,1),1:Widmo_NoStates))**2,abs(Widmo_Vecs(GINDEX(i,j,-1),1:Widmo_NoStates))**2
+        else
+            write(86554,"(2000e20.6)"),i*atomic_DX,j*atomic_DX,abs(Widmo_Vecs(1,1:Widmo_NoStates))*0,abs(Widmo_Vecs(1,1:Widmo_NoStates))*0
+        endif
         enddo
             write(86554,*),""
         enddo
@@ -1366,350 +1367,475 @@ module modspinsystem
 
     close(86554)
     endsubroutine spinsystem_zapisz_do_pliku
+
+    ! ------------------------------------------------------------ -------
+    ! Funkcja zapisuje do pliku nazwa dane wskazane przez typ (patrz enum)
+    ! przeznaczona jest dla wynikow otrzymanych za pomoca solvera stanow
+    ! wlasnych.
+    ! stan_start - numer stanu od ktorego bedzie szlo zapisywanie
+    ! stan_end   - koncowy stan
+    ! xstart,xstop,ystart,ystop - zakres rysowania
+    ! ------------------------------------------------------------ -------
+    subroutine spinsystem_zapisz_widmo_do_pliku(nazwa,typ,stan_start,stan_end,xstart,xstop,ystart,ystop)
+    character(*) , intent(in) :: nazwa
+    integer                   :: typ
+    integer,optional,intent(in)::stan_start,stan_end,xstart,xstop,ystart,ystop
+    integer          :: i,j,x1,x2,y1,y2,s1,s2
+    doubleprecision  :: zeros(Widmo_NoStates)
+    x1 = 1
+    x2 = Nx
+    y1 = 1
+    y2 = Ny
+    s1 = 1
+    s2 = Widmo_NoStates
+    if(Widmo_NoStates <= 0) then
+        print*,"Error: Nie mozna zapisac stanow wlasnych poniewaz ich liczba wynosi 0.."
+        stop
+    endif
+
+    if(s1 > Widmo_NoStates) s1 = Widmo_NoStates
+    if(s2 > Widmo_NoStates) s2 = Widmo_NoStates
+
+    if(present(xstart)) x1 = xstart
+    if(present(xstop))  x2 = xstop
+    if(present(ystart)) y1 = ystart
+    if(present(ystop))  y2 = ystop
+    if(present(stan_start))  s1 = stan_start
+    if(present(stan_end))    s2 = stan_end
+
+    zeros = 0
+
+
+    print*,typ,ZAPISZ_STANY_WLASNE
+    select case(typ)
+    ! ---------------------------------------
+    case(ZAPISZ_WIDMO_VRTCAL)
+        open(unit=86554,file=nazwa)
+        do i = s1 , s2
+            write(86554,*),Widmo_Evals(i)*1000.0*Rd
+        enddo
+    case(ZAPISZ_WIDMO_HRZNTL)
+        open(unit=86554,file=nazwa)
+        write(86554,"(3000e20.6)"),DBLE(Widmo_Evals(s1:s2))*1000.0*Rd
+    case(ZAPISZ_STANY_WLASNE)
+        print*,"Zapisywanie widma:"
+        open(unit=86554,file=nazwa//"_up.txt")
+        open(unit=86553,file=nazwa//"_down.txt")
+        do i = x1 , x2
+        do j = y1 , y2
+                if(GFLAGS(i,j) == B_NORMAL) then
+                    write(86554,"(1000e20.6)"),i*DX*Lr2L,j*DX*Lr2L,abs(Widmo_Vecs(GINDEX(i,j,+1),s1:s2))**2
+                    write(86553,"(1000e20.6)"),i*DX*Lr2L,j*DX*Lr2L,abs(Widmo_Vecs(GINDEX(i,j,-1),s1:s2))**2
+                else
+                    write(86554,"(1000e20.6)"),i*DX*Lr2L,j*DX*Lr2L,zeros(s1:s2)
+                    write(86553,"(1000e20.6)"),i*DX*Lr2L,j*DX*Lr2L,zeros(s1:s2)
+                endif
+        enddo
+            write(86554,*),""
+            write(86553,*),""
+        enddo
+        close(86553)
+    ! ---------------------------------------
+    case default
+            print*,"System: Zapisz widmo do pliku - podano zly argument."
+    end select
+
+    close(86554)
+    endsubroutine spinsystem_zapisz_widmo_do_pliku
 !
-!    ! ------------------------------------------------------------ -------
-!    ! Funkcja zapisuje do pliku nazwa dane wskazane przez typ (patrz enum)
-!    ! przeznaczona jest dla wynikow otrzymanych za pomoca solvera stanow
-!    ! wlasnych.
-!    ! stan_start - numer stanu od ktorego bedzie szlo zapisywanie
-!    ! stan_end   - koncowy stan
-!    ! xstart,xstop,ystart,ystop - zakres rysowania
-!    ! ------------------------------------------------------------ -------
-!    subroutine system_zapisz_widmo_do_pliku(nazwa,typ,stan_start,stan_end,xstart,xstop,ystart,ystop)
-!    character(*) , intent(in) :: nazwa
-!    integer                   :: typ
-!    integer,optional,intent(in)::stan_start,stan_end,xstart,xstop,ystart,ystop
-!    integer          :: i,j,x1,x2,y1,y2,s1,s2
-!    doubleprecision  :: zeros(Widmo_NoStates)
-!    x1 = 1
-!    x2 = Nx
-!    y1 = 1
-!    y2 = Ny
-!    s1 = 1
-!    s2 = Widmo_NoStates
-!    if(Widmo_NoStates <= 0) then
-!        print*,"Error: Nie mozna zapisac stanow wlasnych poniewaz ich liczba wynosi 0.."
-!        stop
-!    endif
 !
-!    if(s1 > Widmo_NoStates) s1 = Widmo_NoStates
-!    if(s2 > Widmo_NoStates) s2 = Widmo_NoStates
-!
-!    if(present(xstart)) x1 = xstart
-!    if(present(xstop))  x2 = xstop
-!    if(present(ystart)) y1 = ystart
-!    if(present(ystop))  y2 = ystop
-!    if(present(stan_start))  s1 = stan_start
-!    if(present(stan_end))    s2 = stan_end
-!
-!    zeros = 0
-!
-!
-!    open(unit=86554,file=nazwa)
-!    select case(typ)
-!    ! ---------------------------------------
-!    case(ZAPISZ_WIDMO_VRTCAL)
-!        do i = s1 , s2
-!            write(86554,*),Widmo_Evals(i)*1000.0*Rd
+    ! =======================================================================================
+    !
+    !
+    !                          FEAST - STANY WLASNE
+    !
+    ! =======================================================================================
+    ! Znajduje stany wlasne ukladu zamknietego, takiego same dla ktorego odbywa sie
+    ! transport.
+    ! Emin      - minimalna energia od ktorej beda szukane wartosci wlasne [meV]
+    ! Emax      - maksymalna energia [meV]
+    ! NoStates  - spodziewana liczba stanow w tym zakresie
+    ! etap - 0:przygotowanie,  1-wykonanie obliczen na podstawie ostatnio obliczonych parametrow
+    ! liczba_konturow[def- 8] - opcjonalna - liczba "controu points" wykonywanych przez feasta.
+    !                    dopuszczalne wartosci to: {3,4,5,6,8,10,12,16,20,24,32,40,48}
+    ! wypisz_informacje[def - 0] - opcjonalna - informuje czy beda wypisywane informacje do konsoli (0 lub 1)
+    ! maks_iter[def - 10] - opcjonalna - maksymalna liczba iteracji wykonywanych przez feasta
+    ! =======================================================================================
+    subroutine spinsystem_widmo(pEmin,pEmax,NoStates,etap,pliczba_konturow,pwypisz_informacje,pmaks_iter)
+        doubleprecision   :: pEmin, pEmax
+        integer           :: NoStates
+        integer,optional  :: etap,pliczba_konturow,pwypisz_informacje,pmaks_iter
+
+
+        integer,save :: fpm(128) , info , M0 , LICZBA_NIEWIADOMYCH
+        integer :: i,j,itmp,nw,loop,no_evals,iter,iii,u,v,s
+        integer :: obecny_etap,liczba_konturow,wypisz_informacje,maks_iter
+        doubleprecision :: epsout
+        doubleprecision :: Emin, Emax , Ecurr
+
+        complex*16,dimension(:,:), allocatable , save      :: EVectors
+        double precision,dimension(:), allocatable , save  :: Evalues,Rerrors
+
+        integer,allocatable, save                     :: HBROWS(:)
+        integer,dimension(:,:,:),allocatable,save     :: WINDEX
+
+
+
+        ! ustalanie domyslnej liczby konturow i wypisywania
+        if(.not. present(pliczba_konturow)) then
+            liczba_konturow = 8
+        else
+            liczba_konturow = pliczba_konturow
+        endif
+        if(.not. present(pwypisz_informacje)) then
+            wypisz_informacje = 0
+        else
+            wypisz_informacje = pwypisz_informacje
+        endif
+        if(.not. present(pmaks_iter)) then
+            maks_iter = 40
+        else
+            maks_iter = pmaks_iter
+        endif
+        if(.not. present(etap)) then
+            obecny_etap = 0
+        else
+            obecny_etap = etap
+        endif
+
+
+        if(obecny_etap == 2) then
+            if(allocated(CMATA))    deallocate(CMATA)
+            if(allocated(IDXA))     deallocate(IDXA)
+            if(allocated(HBROWS))   deallocate(HBROWS)
+            if(allocated(WINDEX))   deallocate(WINDEX)
+            if(allocated(EVectors)) deallocate(EVectors)
+            if(allocated(Evalues))  deallocate(Evalues)
+            if(allocated(Rerrors))  deallocate(Rerrors)
+            return
+        endif
+
+
+        call reset_clock()
+        ! Przejscie do jednostek donorowych
+        Emin = pEmin / 1000.0 / Rd
+        Emax = pEmax / 1000.0 / Rd
+
+
+        Ef  = atomic_Ef/1000.0/Rd
+        BZ  = BtoDonorB(atomic_Bz)
+        Bx  = BtoDonorB(atomic_Bx)
+        By  = BtoDonorB(atomic_By)
+        DX  = atomic_DX*L2LR
+
+        ! zgadujemy liczbe stanow
+ 554    M0  = NoStates
+
+        if(obecny_etap == 0 ) then
+            if(allocated(WINDEX)) deallocate(WINDEX)
+            ! Na problem wlasny sa osobne indeksy
+            allocate(WINDEX(nx,ny,-1:1))
+
+            ! nadawanie indeksow
+            WINDEX = 0
+            iter   = 1
+            do iii = +1 , -1 , -2
+            do i = 1 , nx
+            do j = 1 , ny
+                if( GFLAGS(i,j) == B_NORMAL  ) then
+                    WINDEX(i,j,iii) = iter
+                    iter = iter + 1
+                endif
+            enddo
+            enddo
+            enddo ! end of iii - numerowanie po spinach
+            LICZBA_NIEWIADOMYCH = iter - 1
+
+
+            if(TRANS_EIGPROBLEM_PERIODIC_X) then
+                do j = 1 , ny
+                    WINDEX(nx,j,:) = WINDEX(2   ,j,:)
+                    WINDEX(1 ,j,:) = WINDEX(nx-1,j,:)
+                enddo
+            endif
+
+
+            call feastinit(fpm)
+        endif
+
+        TRANS_MAXN = LICZBA_NIEWIADOMYCH
+
+
+        fpm(1)=wypisz_informacje ! nie wypisuj informacji
+        fpm(2)=liczba_konturow   ! liczba konturow
+        fpm(3)=10                ! wykladnik bledu ponizej ktorego procedura sie zatrzymuje: e=10^(fpm(3))
+        fpm(4)=maks_iter         ! maksymalna liczba iteracji po ktorej jak sie nie zbiegnie to proced. sie zatrzyma
+        fpm(5)=0                 ! startujemy z domyslnymi wektorami (jak 1 to z dostarczonymi)
+        fpm(6)=0                 ! kryterium zbieznosci poprzez residuum (0 albo 1)
+
+       if(obecny_etap == 1 ) then
+            fpm(5)=1     ! startujemy z domyslnymi wektorami (jak 1 to z dostarczonymi)
+       endif
+
+       if(obecny_etap == 0 ) then
+            if(allocated(CMATA)) deallocate(CMATA)
+            if(allocated(IDXA))  deallocate(IDXA)
+            allocate(CMATA(TRANS_MAXN*10))
+            allocate(IDXA (TRANS_MAXN*10,2))
+
+            if(allocated(EVectors)) deallocate(EVectors)
+            if(allocated(Evalues))  deallocate(Evalues)
+            if(allocated(Rerrors))  deallocate(Rerrors)
+
+            allocate(EVectors(TRANS_MAXN,M0))
+            allocate(Evalues(M0))
+            allocate(Rerrors(M0))
+       endif
+        DUTOTAL = UTOTAL/1000.0/Rd
+        ! wypelnianie macierzy
+        cmatA = 0
+        itmp  = 1
+        do s = +1 , -1 , -2 ! petla po spinach
+        do u = 2, nx-1
+        do v = 2, ny-1
+            if(WINDEX(u,v,s) > 0) then
+
+            if(WINDEX(u,v,s) > 0) then
+                cmatA(itmp)   = T0(0,s,u,v) + Ef
+                idxA (itmp,1) = WINDEX(u,v ,s)
+                idxA (itmp,2) = WINDEX(u,v ,s)
+                itmp = itmp + 1
+            endif
+
+            if(WINDEX(u-1,v,s) > 0) then
+                cmatA(itmp)   = Tu(-1,s,u,v)
+                idxA (itmp,1) = WINDEX(u  ,v,s)
+                idxA (itmp,2) = WINDEX(u-1,v,s)
+                itmp = itmp + 1
+            endif
+
+            if(WINDEX(u+1,v,s) > 0) then
+                cmatA(itmp)   = Tu(+1,s,u,v)
+                idxA (itmp,1) = WINDEX(u  ,v,s)
+                idxA (itmp,2) = WINDEX(u+1,v,s)
+                itmp = itmp + 1
+            endif
+
+            if(WINDEX(u,v+1,s) > 0) then
+                cmatA(itmp)  = Tv(+1,s,u,v)
+                idxA(itmp,1) = WINDEX(u,v  ,s)
+                idxA(itmp,2) = WINDEX(u,v+1,s)
+                itmp = itmp + 1
+            endif
+            if(WINDEX(u,v-1,s) > 0) then
+                cmatA(itmp)  = Tv(-1,s,u,v)
+                idxA(itmp,1) = WINDEX(u,v  ,s)
+                idxA(itmp,2) = WINDEX(u,v-1,s)
+                itmp = itmp + 1
+            endif
+
+
+            if(WINDEX(u-1,v,s) > 0) then
+            ! oddzialywanie typu rashba
+                cmatA(itmp)   = Su(-1,-s,u,v)
+                idxA (itmp,1) = WINDEX(u  ,v,+s)
+                idxA (itmp,2) = WINDEX(u-1,v,-s)
+                itmp = itmp + 1
+            endif
+            if(WINDEX(u+1,v,s) > 0) then
+                cmatA(itmp)   = Su(+1,-s,u,v)
+                idxA (itmp,1) = WINDEX(u  ,v,+s)
+                idxA (itmp,2) = WINDEX(u+1,v,-s)
+                itmp = itmp + 1
+            endif
+            if(WINDEX(u,v+1,s) > 0) then
+                cmatA(itmp)  = Sv(+1,-s,u,v)
+                idxA(itmp,1) = WINDEX(u,v  ,+s)
+                idxA(itmp,2) = WINDEX(u,v+1,-s)
+                itmp = itmp + 1
+            endif
+            if(WINDEX(u,v-1,s) > 0) then
+                cmatA(itmp)  = Sv(-1,-s,u,v)
+                idxA(itmp,1) = WINDEX(u,v  ,+s)
+                idxA(itmp,2) = WINDEX(u,v-1,-s)
+                itmp = itmp + 1
+            endif
+            if(WINDEX(u,v,s) > 0) then
+            ! odzialywanie z polem w kierunku x i y (zeemann)
+                cmatA(itmp)  = Sb(0,-s,0,0)
+                idxA(itmp,1) = WINDEX(u,v  ,+s)
+                idxA(itmp,2) = WINDEX(u,v  ,-s)
+                itmp = itmp + 1
+            endif
+
+            endif ! end of (u,v) > 0
+        enddo
+        enddo
+        enddo
+
+
+
+        itmp        = itmp - 1
+        MATASIZE    = itmp
+        nw          = itmp
+
+
+!        do i  = 1 , MATASIZE
+!        print*,i,IDXA(i,1:2),(cmatA(i))
 !        enddo
-!    case(ZAPISZ_WIDMO_HRZNTL)
-!        write(86554,"(3000e20.6)"),DBLE(Widmo_Evals(s1:s2))*1000.0*Rd
-!    case(ZAPISZ_STANY_WLASNE)
-!        do i = x1 , x2
-!        do j = y1 , y2
-!                if(GFLAGS(i,j) == B_NORMAL) then
-!                    write(86554,"(1000e20.6)"),i*DX*Lr2L,j*DX*Lr2L,abs(Widmo_Vecs(GINDEX(i,j),s1:s2))**2
-!                else
-!                    write(86554,"(1000e20.6)"),i*DX*Lr2L,j*DX*Lr2L,zeros(s1:s2)
-!                endif
-!        enddo
-!            write(86554,*),""
-!        enddo
-!    ! ---------------------------------------
-!    case default
-!            print*,"System: Zapisz widmo do pliku - podano zly argument."
-!    end select
-!
-!    close(86554)
-!    endsubroutine system_zapisz_widmo_do_pliku
-!
-!
-!    ! =======================================================================================
-!    !
-!    !
-!    !                          FEAST - STANY WLASNE
-!    !
-!    ! =======================================================================================
-!    ! Znajduje stany wlasne ukladu zamknietego, takiego same dla ktorego odbywa sie
-!    ! transport.
-!    ! Emin      - minimalna energia od ktorej beda szukane wartosci wlasne [meV]
-!    ! Emax      - maksymalna energia [meV]
-!    ! NoStates  - spodziewana liczba stanow w tym zakresie
-!    ! liczba_konturow[def- 8] - opcjonalna - liczba "controu points" wykonywanych przez feasta.
-!    !                    dopuszczalne wartosci to: {3,4,5,6,8,10,12,16,20,24,32,40,48}
-!    ! wypisz_informacje[def - 0] - opcjonalna - informuje czy beda wypisywane informacje do konsoli (0 lub 1)
-!    ! maks_iter[def - 10] - opcjonalna - maksymalna liczba iteracji wykonywanych przez feasta
-!    ! =======================================================================================
-!    subroutine system_widmo(pEmin,pEmax,NoStates,pliczba_konturow,pwypisz_informacje,pmaks_iter)
-!        doubleprecision   :: pEmin, pEmax
-!        integer           :: NoStates
-!        integer,optional  :: pliczba_konturow,pwypisz_informacje,pmaks_iter
-!
-!
-!        integer :: fpm(128)
-!        integer :: i,j,info,itmp,nw,M0,loop,no_evals,iter
-!        integer :: liczba_konturow,wypisz_informacje,maks_iter
-!        doubleprecision :: epsout
-!        doubleprecision :: Emin, Emax , Ecurr
-!
-!
-!        integer,allocatable                    :: HBROWS(:)
-!        complex*16,dimension(:,:), allocatable :: EVectors
-!        double precision,dimension(:), allocatable   :: Evalues,Rerrors
-!        integer,dimension(:,:),allocatable     :: WINDEX
-!        call reset_clock()
-!        ! Przejscie do jednostek donorowych
-!        Emin = pEmin / 1000.0 / Rd
-!        Emax = pEmax / 1000.0 / Rd
-!
-!        BZ  = BtoDonorB(atomic_Bz)
-!        ! Na problem wlasny sa osobne indeksy
-!        allocate(WINDEX(nx,ny))
-!        WINDEX = 0
-!        iter   = 1
-!        do i = 1 , nx
-!        do j = 1 , ny
-!           if( GFLAGS(i,j) == B_NORMAL  ) then
-!                WINDEX(i,j) = iter
-!                iter = iter + 1
-!           endif
-!        enddo
-!        enddo
-!        TRANS_MAXN = iter-1
-!
-!        ! ustalanie domyslnej liczby konturow i wypisywania
-!        if(.not. present(pliczba_konturow)) then
-!            liczba_konturow = 8
-!        else
-!            liczba_konturow = pliczba_konturow
-!        endif
-!        if(.not. present(pwypisz_informacje)) then
-!            wypisz_informacje = 0
-!        else
-!            wypisz_informacje = pwypisz_informacje
-!        endif
-!        if(.not. present(pmaks_iter)) then
-!            maks_iter = 20
-!        else
-!            maks_iter = pmaks_iter
-!        endif
-!
-!        call feastinit(fpm)
-!
-!        fpm(1)=wypisz_informacje ! nie wypisuj informacji
-!        fpm(2)=liczba_konturow   ! liczba konturow
-!        fpm(3)=12                ! wykladnik bledu ponizej ktorego procedura sie zatrzymuje: e=10^(fpm(3))
-!        fpm(4)=maks_iter         ! maksymalna liczba iteracji po ktorej jak sie nie zbiegnie to proced. sie zatrzyma
-!        fpm(5)=0                 ! startujemy z domyslnymi wektorami (jak 1 to z dostarczonymi)
-!        fpm(6)=0                 ! kryterium zbieznosci poprzez residuum (0 albo 1)
-!
-!        allocate(CMATA(TRANS_MAXN*5))
-!        allocate(IDXA (TRANS_MAXN*5,2))
-!        itmp  = 1
-!        do i = 2, nx-1
-!        do j = 2, ny-1
-!        if(WINDEX(i,j) > 0) then
-!        if(WINDEX(i,j-1) > 0) then
-!                cmatA(itmp) = CMPLX(-0.5/DX/DX)
-!                idxA(itmp,1) = WINDEX(i,j)
-!                idxA(itmp,2) = WINDEX(i,j-1)
-!                itmp = itmp + 1
-!        endif
-!        if(WINDEX(i-1,j) > 0) then
-!
-!                cmatA(itmp)   = CMPLX(-0.5/DX/DX*EXP(+II*DX*DX*(j)*BZ)  )
-!                idxA (itmp,1) = WINDEX(i  ,j)
-!                idxA (itmp,2) = WINDEX(i-1,j)
-!                itmp = itmp + 1
-!        endif
-!        if(WINDEX(i,j) > 0) then
-!
-!                cmatA(itmp)   = CMPLX( 2.0/DX/DX + UTOTAL(i,j) )
-!                idxA (itmp,1) = WINDEX(i,j)
-!                idxA (itmp,2) = WINDEX(i,j)
-!                itmp = itmp + 1
-!        endif
-!        if(WINDEX(i+1,j) > 0) then
-!
-!                cmatA(itmp)   = CMPLX(-0.5/DX/DX*EXP(-II*DX*DX*(j)*BZ)  )
-!                idxA (itmp,1) = WINDEX(i  ,j)
-!                idxA (itmp,2) = WINDEX(i+1,j)
-!                itmp = itmp + 1
-!        endif
-!        if(WINDEX(i,j+1) > 0) then
-!
-!                cmatA(itmp) = CMPLX(-0.5/DX/DX)
-!                idxA(itmp,1) = WINDEX(i,j)
-!                idxA(itmp,2) = WINDEX(i,j+1)
-!                itmp = itmp + 1
-!        endif
-!        endif ! end of jesli jestesmy na komurce B_NORMAl
-!        enddo
-!        enddo
-!
-!
-!        itmp        = itmp - 1
-!        MATASIZE    = itmp
-!        nw          = itmp
-!        if(wypisz_informacje==1) then
-!            print*,"--------------------------------------------------"
-!            print*,"Widmo:"
-!            print*,"--------------------------------------------------"
-!            print*,"Rozmiar problemu N:     ",TRANS_MAXN
-!            print*,"Zakres energii:         ",Emin*1000.0*Rd," do ",Emax*1000.0*Rd,"w meV"
-!            print*,"Liczba konturow:        ",liczba_konturow
-!            print*,"Maksymalna liczba iter. :",maks_iter
-!            print*,"Zalozona liczba stanow: ",NoStates
-!        endif
-!
-!        ! --------------------------------------------system_inicjalizacja_ukladu---------------
-!        !
-!        ! -----------------------------------------------------------
-!        allocate(HBROWS(TRANS_MAXN+1))
-!        call convert_to_HB(MATASIZE,IDXA,HBROWS)
-!
-!
-!        ! zgadujemy liczbe stanow
-!        M0  = NoStates
-!
-!        allocate(EVectors(TRANS_MAXN,M0))
-!        allocate(Evalues(M0))
-!        allocate(Rerrors(M0))
-!
-!
-!
-!        call zfeast_hcsrev('F',&                ! - 'F' oznacza ze podawana jest pelna macierz
-!                              TRANS_MAXN,&    ! - rozmiar problemu (ile wezlow z flaga B_NORMAL)
-!                              CMATA(1:nw),&    ! - kolejne nie zerowe wartosci w macierzy H
-!                              HBROWS,&         ! - numeracja wierszy (rodzaj zapisu macierzy rzakidch)
-!                              idxA(1:nw,2),&   ! - indeksy kolumn odpowiadaja tablicy wartosci CMATA
-!                              fpm,&            ! - wektor z konfiguracja procedury
-!                              epsout,&         ! - Residuum wyjsciowe
-!                              loop, &          ! - Koncowa liczba iteracji
-!                              Emin,&           ! - Minimalna energia przeszukiwania
-!                              Emax,&           ! - Maksymalna energia
-!                              M0,&             ! - Spodziewana liczba modow w zakresie (Emin,Emax)
-!                              Evalues,&        ! - Wektor z otrzymanymi wartosciami wlasnymi
-!                              EVectors,&       ! - Macierz z wektorami (kolejne kolumny odpowiadaja kolejnym wartoscia z tablicy Evalues)
-!                              no_evals,&       ! - Liczba otrzymanych wartosci z przedziale (Emin,Emax)
-!                              Rerrors,&        ! - Wektor z bledami dla kolejnych wartosci wlasnych
-!                              info)            ! - Ewentualne informacje o bledach
-!
-!
-!
-!        if(wypisz_informacje==1) then
-!            print*,"Eps wyjsciowy           :",  epsout
-!            print*,"Liczba iteracji         :",  loop
-!            print*,"Znaleziona l. stanow    :",  no_evals
-!            print*,"Info                    :",  info
-!            print*,"Czas obliczen [s]       :",  get_clock()
-!            print*,"--------------------------------------------------"
-!        endif
-!
-!        Widmo_NoStates = no_evals
-!
-!        ! ----------------------------------------------------------------------------------
-!        ! Obsluga bledow:
-!        ! ----------------------------------------------------------------------------------
-!        selectcase(info)
-!        case( 202 )
-!            print*," Error : Problem with size of the system n (n≤0) "
-!            stop
-!        case( 201 )
-!            print*," Error : Problem with size of initial subspace m0 (m0≤0 or m0>n) "
-!            stop
-!        case( 200 )
-!            print*," Error : Problem with emin,emax (emin≥emax) "
-!            stop
-!        case(100:199)
-!            print"(A,I4,A)"," Error : Problem with ",info-100,"-th value of the input Extended Eigensolver parameter (fpm(i)). Only the parameters in use are checked. "
-!            Widmo_NoStates = 0
-!            stop
-!        case( 4 )
-!            print*," Warning : Successful return of only the computed subspace after call withfpm(14) = 1 "
-!            Widmo_NoStates = 0
-!
-!        case( 3 )
-!            print*," Warning : Size of the subspace m0 is too small (m0<m) "
-!            Widmo_NoStates = 0
-!
-!        case( 2 )
-!            print*," Warning : No Convergence (number of iteration loops >fpm(4))"
-!            Widmo_NoStates = 0
-!        case( 1 )
-!            print*," Warning : No eigenvalue found in the search interval. See remark below for further details. "
-!            Widmo_NoStates = 0
-!        case( 0 )
-!            print*,               "---------------------------------------------"
-!            print"(A,i12)",       "Widmo: Znaleziono stanow :",Widmo_NoStates
-!            print"(A,f12.3)",     "       W czasie T [s]    :",get_clock()
-!            print"(A,e12.4)",     "       Z bledem epsout   :",epsout
-!            print"(A,i12)",       "       W po liczbie iter.:",loop
-!            print*,               "---------------------------------------------"
-!        case( -1 )
-!            print*," Error : Internal error for allocation memory. "
-!            stop
-!        case( -2 )
-!            print*," Error : Internal error of the inner system solver. Possible reasons: not enough memory for inner linear system solver or inconsistent input. "
-!            stop
-!        case( -3 )
-!            print*," Error : Internal error of the reduced eigenvalue solver Possible cause: matrix B may not be positive definite. It can be checked with LAPACK routines, if necessary."
-!            stop
-!        case(-199:-100)
-!            print"(A,I4,A)"," Error : Problem with the ",-info-100,"-th argument of the Extended Eigensolver interface. "
-!            stop
-!        endselect
-!
-!        ! -----------------------------------------------------------------
-!        ! Kopiowanie wynikow do odpowiednich tablic
-!        ! -----------------------------------------------------------------
-!
-!
-!        if(allocated(Widmo_Evals)) deallocate(Widmo_Evals)
-!        if(allocated(Widmo_Vecs))  deallocate(Widmo_Vecs)
-!
-!
-!
-!!        Widmo_NoStates = no_evals
-!        if(Widmo_NoStates > 0 ) then
-!            call oblicz_rozmiar_macierzy();
-!
-!            allocate(Widmo_Vecs(TRANS_MAXN,Widmo_NoStates))
-!            do i = 1 , nx
-!            do j = 1 , ny
-!                if(WINDEX(i,j) > 0) then
-!                    Widmo_Vecs(GINDEX(i,j),1:Widmo_NoStates) = EVectors(WINDEX(i,j),1:Widmo_NoStates)
-!                endif
-!            enddo
-!            enddo
-!
-!            allocate(Widmo_Evals(Widmo_NoStates))
-!            Widmo_Evals(1:Widmo_NoStates) = Evalues(1:Widmo_NoStates)
-!        endif
-!
-!        deallocate(CMATA)
-!        deallocate(IDXA)
-!        deallocate(HBROWS)
-!        deallocate(EVectors)
-!        deallocate(Evalues)
-!        deallocate(Rerrors)
-!        deallocate(WINDEX)
-!
-!    end subroutine system_widmo
-!
-!
-!
-!
+
+        if(wypisz_informacje==1) then
+            print*,"--------------------------------------------------"
+            print*,"Widmo:"
+            print*,"--------------------------------------------------"
+            print*,"Rozmiar problemu N:     ",TRANS_MAXN
+            print*,"Zakres energii:         ",Emin*1000.0*Rd," do ",Emax*1000.0*Rd,"w meV"
+            print*,"Liczba konturow:        ",liczba_konturow
+            print*,"Maksymalna liczba iter. :",maks_iter
+            print*,"Zalozona liczba stanow: ",NoStates
+        endif
+
+        ! -----------------system_inicjalizacja_ukladu---------------
+        !
+        ! -----------------------------------------------------------
+
+        if(obecny_etap == 0 ) then
+            if(allocated(HBROWS)) deallocate(HBROWS)
+            allocate(HBROWS(TRANS_MAXN+1))
+            call convert_to_HB(MATASIZE,IDXA,HBROWS)
+        endif
+
+
+
+     call zfeast_hcsrev('F',&               ! - 'F' oznacza ze podawana jest pelna macierz
+                              TRANS_MAXN,&     ! - rozmiar problemu (ile wezlow z flaga B_NORMAL)
+                              CMATA(1:nw),&    ! - kolejne nie zerowe wartosci w macierzy H
+                              HBROWS,&         ! - numeracja wierszy (rodzaj zapisu macierzy rzakidch)
+                              idxA(1:nw,2),&   ! - indeksy kolumn odpowiadaja tablicy wartosci CMATA
+                              fpm,&            ! - wektor z konfiguracja procedury
+                              epsout,&         ! - Residuum wyjsciowe
+                              loop, &          ! - Koncowa liczba iteracji
+                              Emin,&           ! - Minimalna energia przeszukiwania
+                              Emax,&           ! - Maksymalna energia
+                              M0,&             ! - Spodziewana liczba modow w zakresie (Emin,Emax)
+                              Evalues,&        ! - Wektor z otrzymanymi wartosciami wlasnymi
+                              EVectors,&       ! - Macierz z wektorami (kolejne kolumny odpowiadaja kolejnym wartoscia z tablicy Evalues)
+                              no_evals,&       ! - Liczba otrzymanych wartosci z przedziale (Emin,Emax)
+                              Rerrors,&        ! - Wektor z bledami dla kolejnych wartosci wlasnych
+                              info)            ! - Ewentualne informacje o bledach
+
+
+        if(wypisz_informacje==1) then
+            print*,"Eps wyjsciowy           :",  epsout
+            print*,"Liczba iteracji         :",  loop
+            print*,"Znaleziona l. stanow    :",  no_evals
+            print*,"Info                    :",  info
+            print*,"Czas obliczen [s]       :",  get_clock()
+            print*,"--------------------------------------------------"
+        endif
+
+        Widmo_NoStates = no_evals
+
+        ! ----------------------------------------------------------------------------------
+        ! Obsluga bledow:
+        ! ----------------------------------------------------------------------------------
+        selectcase(info)
+        case( 202 )
+            print*," Error : Problem with size of the system n (n≤0) "
+            stop
+        case( 201 )
+            print*," Error : Problem with size of initial subspace m0 (m0≤0 or m0>n) "
+            stop
+        case( 200 )
+            print*," Error : Problem with emin,emax (emin≥emax) "
+            stop
+        case(100:199)
+            print"(A,I4,A)"," Error : Problem with ",info-100,"-th value of the input Extended Eigensolver parameter (fpm(i)). Only the parameters in use are checked. "
+            Widmo_NoStates = 0
+            stop
+        case( 4 )
+            print*," Warning : Successful return of only the computed subspace after call withfpm(14) = 1 "
+            Widmo_NoStates = 0
+
+        case( 3 )
+            print*," Warning : Size of the subspace m0 is too small (m0<m) "
+            print*,"m0=",NoStates
+
+            Widmo_NoStates = 0
+            NoStates       = NoStates*1.5
+            obecny_etap    = 0 ! liczymy jak nowy uklad
+
+            goto 554
+        case( 2 )
+            print*," Warning : No Convergence (number of iteration loops >fpm(4))"
+            Widmo_NoStates = 0
+        case( 1 )
+            print*," Warning : No eigenvalue found in the search interval. See remark below for further details. "
+            Widmo_NoStates = 0
+            Emax = Emax * 1.5
+            goto 554
+
+        case( 0 )
+            print*,               "---------------------------------------------"
+            print"(A,i12)",       "Widmo: Znaleziono stanow :",Widmo_NoStates
+            print"(A,f12.3)",     "       W czasie T [s]    :",get_clock()
+            print"(A,e12.4)",     "       Z bledem epsout   :",epsout
+            print"(A,i12)",       "       W po liczbie iter.:",loop
+            print*,               "---------------------------------------------"
+
+        case( -1 )
+            print*," Error : Internal error for allocation memory. "
+            stop
+        case( -2 )
+            print*," Error : Internal error of the inner system solver. Possible reasons: not enough memory for inner linear system solver or inconsistent input. "
+            stop
+        case( -3 )
+            print*," Error : Internal error of the reduced eigenvalue solver Possible cause: matrix B may not be positive definite. It can be checked with LAPACK routines, if necessary."
+            stop
+        case(-199:-100)
+            print"(A,I4,A)"," Error : Problem with the ",-info-100,"-th argument of the Extended Eigensolver interface. "
+            stop
+        endselect
+
+        ! -----------------------------------------------------------------
+        ! Kopiowanie wynikow do odpowiednich tablic
+        ! -----------------------------------------------------------------
+
+
+        if(allocated(Widmo_Evals)) deallocate(Widmo_Evals)
+        if(allocated(Widmo_Vecs))  deallocate(Widmo_Vecs)
+
+
+        if(Widmo_NoStates > 0 ) then
+            call oblicz_rozmiar_macierzy();
+
+            allocate(Widmo_Vecs(TRANS_MAXN,Widmo_NoStates))
+            Widmo_Vecs = 0
+            do s = 1 , -1 , -2
+            do i = 2 , nx-1
+            do j = 2 , ny-1
+                if(WINDEX(i,j,s) > 0) then
+                    Widmo_Vecs(GINDEX(i,j,s),1:Widmo_NoStates) = EVectors(WINDEX(i,j,s),1:Widmo_NoStates)
+                endif
+            enddo
+            enddo
+            enddo
+
+            do s = 1 , Widmo_NoStates
+                Widmo_Vecs(:,s) = Widmo_Vecs(:,s) / sqrt( sum(abs(Widmo_Vecs(:,s))**2) * dx * dx )
+            enddo
+
+            allocate(Widmo_Evals(Widmo_NoStates))
+            Widmo_Evals(1:Widmo_NoStates) = Evalues(1:Widmo_NoStates)
+        endif
+
+
+
+    end subroutine spinsystem_widmo
+
+
+
+
     ! ==========================================================================
     !
     !

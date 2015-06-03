@@ -9,8 +9,10 @@ MODULE modjed
     ! jednostka energi (atomowych) eV
     double precision,parameter  :: E0        = 27.211384523
     complex*16 ,parameter       :: II        = CMPLX(0,1)
+
+    double precision,dimension(:,:,:), allocatable:: SUTOTAL ! MACIERZ POTENCJALU EFEKTYWNEGO DLA SPINOW
+    double precision,dimension(:,:), allocatable  :: DUTOTAL ! MACIERZ POTENCJALU EFEKTYWNEGO w jednostkach donorowych
     double precision  :: KbT
-    double precision  :: Temp
     double precision  :: Rd
     double precision  :: L2LR
     double precision  :: LR2L
@@ -29,7 +31,7 @@ MODULE modjed
     double precision :: so_alpha3D
 
     logical,parameter :: TRANS_DEBUG = .false.
-
+    logical           :: TRANS_EIGPROBLEM_PERIODIC_X = .false.
 
      ENUM,BIND(C)
         ENUMERATOR :: USING_SUPER_LU      = 0
@@ -39,11 +41,11 @@ MODULE modjed
 
 
 !DEC$ IF DEFINED  (USE_UMF_PACK)
-integer :: TRANS_SOLVER = USING_UMFPACK
+integer,parameter :: TRANS_SOLVER = USING_UMFPACK
 !DEC$ ELSE IF DEFINED  (USE_PARDISO)
-integer :: TRANS_SOLVER = USING_PARDISO
+integer,parameter :: TRANS_SOLVER = USING_PARDISO
 !DEC$ ELSE
-integer :: TRANS_SOLVER = USING_SUPER_LU
+integer,parameter :: TRANS_SOLVER = USING_SUPER_LU
 !DEC$ ENDIF
 
     ENUM,BIND(C)
@@ -103,11 +105,10 @@ integer :: TRANS_SOLVER = USING_SUPER_LU
 
         E_MAT     = pE_MAT
         M_EFF     = pM_EFF
-        Temp      = 0.0
         Rd        = E0*M_EFF/E_MAT/E_MAT
         L2LR      = M_EFF/E_MAT/A0
         LR2L      = 1.0/L2LR
-        kbT       = 8.617D-5*Temp/Rd
+        !kbT       = 8.617D-5*Temp/Rd
 
         atomic_Rashba = so_alpha3D*so_Fz
         atomic_LOC    = so_alpha3D

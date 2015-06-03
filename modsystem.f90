@@ -35,7 +35,7 @@ module modsystem
     integer,dimension(:,:), allocatable           :: ZFLAGS ! ZAWIERA FLAGI WEJSC WARTOSC FLAGI OZNACZA NUMER WEJSCIA - 1,2, ...
     integer,dimension(:,:), allocatable           :: GINDEX ! INDEKSUJE GEOMETRIE UKLADU (-1) OZNACZA POZA UKLADEM
     double precision,dimension(:,:), allocatable  :: UTOTAL ! MACIERZ POTENCJALU EFEKTYWNEGO
-    double precision,dimension(:,:), allocatable  :: DUTOTAL ! MACIERZ POTENCJALU EFEKTYWNEGO w jednostkach donorowych
+!    double precision,dimension(:,:), allocatable  :: DUTOTAL ! MACIERZ POTENCJALU EFEKTYWNEGO w jednostkach donorowych
     complex*16,dimension(:),allocatable           :: CMATA  ! GLOWNA MACIERZ PROGRAMU W FORMACIE (ROW,COL,VALS), TUTAJ TYLKO VALS
     integer,dimension(:,:),allocatable            :: IDXA   ! INDEKSY MACIERZY (ROW,COL)
     complex*16,dimension(:),allocatable           :: VPHI   ! SZUKANA FUNKCJA FALOWA, PRZELICZANA POTEM NA LDOS
@@ -66,7 +66,7 @@ module modsystem
     public :: zrodla,UTOTAL,GFLAGS,GINDEX,PHI
     public :: system_inicjalizacja , system_zwalnienie_pamieci , system_inicjalizacja_ukladu
     public :: system_dodaj_abs_zrodlo !(pY1,pYN,pX1,pEf,pKierunek)
-    public :: system_zapisz_do_pliku , system_rozwiaz_problem
+    public :: system_zapisz_do_pliku , system_rozwiaz_problem,system_rozwiaz_problem_iteracyjnie
     public :: system_gauss , system_dodaj_lorentza , system_dodaj_gaussa , system_dodaj_pionowy_slupek_potencjalu
     public :: system_fermi, system_fermiT , system_dfermidE
     public :: system_widmo,system_zapisz_widmo_do_pliku,Widmo_NoStates,Widmo_Evals,Widmo_Vecs
@@ -418,6 +418,148 @@ module modsystem
         deallocate(HBROWS)
 
     end subroutine system_rozwiaz_problem
+
+
+
+    ! --------------------------------------------------------------------
+    ! Rozwiazywanie problemu dla zrodla o podanym numerze - nrz
+    ! Do rozwiazania problemu wykorzystywana jest otrzymana funkcja
+    ! falowa z poprzedniego rozwiazania
+    ! --------------------------------------------------------------------
+    subroutine system_rozwiaz_problem_iteracyjnie(nrz,opt,TR_MAT)
+        integer,intent(in)  :: nrz,opt
+        double precision,dimension(:,:), allocatable  :: TR_MAT
+        integer,allocatable :: HBROWS(:)
+        integer :: i,j,ni,nj,mod_in
+
+        double precision,allocatable,dimension(:) :: d_matA
+        double precision,allocatable,dimension(:) :: d_bvec
+        double precision,allocatable,dimension(:) :: d_sol_vec
+        integer,allocatable,dimension(:,:)  :: d_rows_cols
+        integer,allocatable,dimension(:)    :: d_hb_rows
+        integer :: d_matAsize,d_no_rows,converged
+
+        Ef  = atomic_Ef/1000.0/Rd
+        BZ  = BtoDonorB(atomic_Bz)
+        print*,"! ----------------------------------------------- !"
+        print*,"! Rozpoczecie obliczen dla zrodla=", nrz
+        print*,"!   Ef=", Ef*Rd*1000    , "[meV]"
+        print*,"!   Bz=", DonorBtoB(Bz) , "[T]"
+        print*,"! ----------------------------------------------- !"
+
+        call oblicz_rozmiar_macierzy()
+
+        allocate(CMATA(MATASIZE))
+        allocate(IDXA (MATASIZE,2))
+        allocate(VPHI(TRANS_MAXN))
+        allocate(HBROWS(TRANS_MAXN+1))
+
+
+        ! tablice z wspolczynnikami T i R
+        if(allocated(TR_MAT)) deallocate(TR_MAT)
+        allocate(TR_MAT(no_zrodel,zrodla(nrz)%liczba_modow))
+
+        TR_MAT   = 0;
+        CURRENT  = 0;
+        CURRENTX = 0;
+        CURRENTY = 0;
+        PHI      = 0;
+        TRANS_R  = 0;
+        TRANS_T  = 0;
+
+        DUTOTAL = UTOTAL/1000.0/Rd
+        ! --------------------------------------------------------------------
+        !
+        ! --------------------------------------------------------------------
+        call wypelnij_macierz()
+        call convert_complex_to_double(MATASIZE,TRANS_MAXN,idxA,CMATA,VPHI,VPHI,&
+                        d_matAsize,d_no_rows,d_rows_cols,d_hb_rows,d_matA,d_bvec,d_sol_vec)
+        call convert_to_HB(MATASIZE,IDXA,HBROWS)
+        call d_convert_to_HB(d_matAsize,d_matA,d_rows_cols,d_hb_rows)
+
+        do mod_in = 1 , zrodla(nrz)%liczba_modow
+
+            zrodla(nrz)%ck(:)      = 0
+            zrodla(nrz)%ck(mod_in) = 1
+
+            call zrodla(nrz)%zrodlo_oblicz_Fj(dx)
+            VPHI = 0
+            do i = 2 , zrodla(nrz)%N - 1
+                ni = zrodla(nrz)%polozenia(i,1)
+                nj = zrodla(nrz)%polozenia(i,2)
+                VPHI(GINDEX(ni,nj)) = zrodla(nrz)%Fj(i)
+            enddo
+
+            d_bvec    = 0
+            d_sol_vec = 0
+            do i = 1 , Nx
+            do j = 1 , Ny
+                if(GINDEX(i,j) > 0) then
+                d_bvec(GINDEX(i,j))               = dble(VPHI(GINDEX(i,j)))
+                d_bvec(GINDEX(i,j)+TRANS_MAXN)    = imag(VPHI(GINDEX(i,j)))
+
+                d_sol_vec(GINDEX(i,j))            = dble(WAVEFUNC(i,j,mod_in))
+                d_sol_vec(GINDEX(i,j)+TRANS_MAXN) = imag(WAVEFUNC(i,j,mod_in))
+                endif
+            enddo
+            enddo
+
+
+            call solve_system_iters(d_no_rows,d_sol_vec,d_hb_rows,d_rows_cols(:,2),d_mata,d_bvec,converged)
+
+
+            ! jesli sie nei uzbieznilo no to liczymy normalnie
+            if(converged == 0) then
+                call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,2)
+            else
+                do i = 1 , TRANS_MAXN
+                    VPHI(i) = CMPLX(d_sol_vec(i),d_sol_vec(i+TRANS_MAXN))
+                enddo
+            endif
+
+
+
+
+
+
+            call oblicz_TR(nrz,mod_in)
+            call system_oblicz_J()
+
+            do i = 1 ,no_zrodel
+                TR_MAT(i,mod_in) = sum(abs(zrodla(i)%Jout(:)) )
+            enddo
+
+            WAVEFUNC(:,:,mod_in) = 0
+            do i = 1 , Nx
+            do j = 1 , Ny
+                if(GINDEX(i,j) > 0) PHI(i,j) = PHI(i,j) + abs( VPHI(GINDEX(i,j)) )**2
+
+                if(GINDEX(i,j) > 0) WAVEFUNC(i,j,mod_in) = VPHI(GINDEX(i,j))
+            enddo
+            enddo
+
+        enddo ! end of petla po modach
+
+        print*,"T = ", TRANS_T
+        print*,"R = ", TRANS_R
+        print*,"W = ", TRANS_R + TRANS_T
+        !call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,3)
+	    zrodla(nrz)%ck(:)      = 0
+
+
+        deallocate(d_rows_cols)
+        deallocate(d_mata)
+        deallocate(d_bvec)
+        deallocate(d_sol_vec)
+        deallocate(d_hb_rows)
+
+
+        deallocate(CMATA)
+        deallocate(IDXA)
+        deallocate(VPHI)
+        deallocate(HBROWS)
+
+    end subroutine system_rozwiaz_problem_iteracyjnie
 
     ! ---------------------------------------------------------------------
     !   Wyliczanie rozmiaru macierzy: zakladamy, ze na :
@@ -1197,6 +1339,8 @@ module modsystem
             maks_iter = pmaks_iter
         endif
 
+
+
         call feastinit(fpm)
 
         fpm(1)=wypisz_informacje ! nie wypisuj informacji
@@ -1206,8 +1350,12 @@ module modsystem
         fpm(5)=0                 ! startujemy z domyslnymi wektorami (jak 1 to z dostarczonymi)
         fpm(6)=0                 ! kryterium zbieznosci poprzez residuum (0 albo 1)
 
+
         allocate(CMATA(TRANS_MAXN*5))
         allocate(IDXA (TRANS_MAXN*5,2))
+
+
+
         itmp  = 1
         do i = 2, nx-1
         do j = 2, ny-1
@@ -1701,6 +1849,453 @@ module modsystem
 
 
 
+! ----------------------------------------------------------------------------------------
+!                                   Metody iteracyjne
+! ----------------------------------------------------------------------------------------
+subroutine convert_complex_to_double(no_vals,  no_rows,  rows_cols,            vals,  bvec,  sol_vec,&
+		 		   d_no_vals,d_no_rows,d_rows_cols,d_hb_rows,d_vals,d_bvec,d_sol_vec)
+
+    ! input vectors (for complex linear system)
+    integer :: no_vals,no_rows
+    integer,dimension(:,:)  :: rows_cols
+    complex*16,dimension(:) :: vals
+    complex*16,dimension(:) :: bvec
+    complex*16,dimension(:) :: sol_vec
+
+    ! output vectors  (for double linear system)
+    integer :: d_no_vals,d_no_rows
+    integer,allocatable,dimension(:,:)  :: d_rows_cols
+    integer,allocatable,dimension(:)    :: d_hb_rows
+
+    double precision,allocatable,dimension(:) :: d_vals
+    double precision,allocatable,dimension(:) :: d_bvec
+    double precision,allocatable,dimension(:) :: d_sol_vec
+
+    integer :: iter,i
+    allocate(d_rows_cols(4*no_vals,2))
+    allocate(d_vals(4*no_vals))
+    allocate(d_bvec(2*no_rows))
+    allocate(d_sol_vec(2*no_rows))
+    allocate(d_hb_rows(2*no_rows+1))
+
+    d_no_vals   = 4*no_vals
+    d_no_rows   = 2*no_rows
+
+    iter = 1
+    do i = 1 , no_vals
+        d_rows_cols(iter,1) = rows_cols(i,1)
+        d_rows_cols(iter,2) = rows_cols(i,2)
+        d_vals(iter)        = dble(vals(i))
+        iter = iter + 1
+
+        d_rows_cols(iter,1) = rows_cols(i,1)
+        d_rows_cols(iter,2) = rows_cols(i,2)+no_rows
+        d_vals(iter)        =-imag(vals(i))
+        iter = iter + 1
+    enddo
+
+    do i = 1 , no_vals
+
+        d_rows_cols(iter,1) = rows_cols(i,1)+no_rows
+        d_rows_cols(iter,2) = rows_cols(i,2)
+        d_vals(iter)        = imag(vals(i))
+        iter = iter + 1
+
+        d_rows_cols(iter,1) = rows_cols(i,1)+no_rows
+        d_rows_cols(iter,2) = rows_cols(i,2)+no_rows
+        d_vals(iter)        = dble(vals(i))
+        iter = iter + 1
+
+    enddo
+
+    do i = 1 , no_rows
+        d_bvec(i)         = dble(bvec(i))
+        d_bvec(i+no_rows) = imag(bvec(i))
+
+        d_sol_vec(i)         = dble(sol_vec(i))
+        d_sol_vec(i+no_rows) = imag(sol_vec(i))
+    enddo
+
+
+end subroutine convert_complex_to_double
+
+
+subroutine d_convert_to_HB(no_vals,vals,rows_cols,out_rows)
+  integer,intent(in)                           :: no_vals
+  integer,intent(inout),dimension(:,:)         :: rows_cols
+  double precision,intent(inout),dimension(:)  :: vals
+  integer,intent(inout),dimension(:)           :: out_rows
+  integer :: iterator, irow , from , to
+  integer :: i, n
+
+  n        = no_vals
+  iterator = 0
+  irow     = 0
+  do i = 1 , n
+      if( rows_cols(i,1) /= irow ) then
+        iterator = iterator + 1
+        out_rows(iterator) = i
+        irow = rows_cols(i,1)
+      endif
+  enddo
+  out_rows(iterator+1) = n + 1
+
+
+  ! -------------------------------------------------------------------
+  irow = size(out_rows)-1
+    ! sortowanie  kolumn
+  do i = 1 , irow-1
+  from = out_rows(i)
+  to   = out_rows(i+1)-1
+      call d_sort_col_vals(rows_cols(from:to,2),vals(from:to))
+  enddo
+  ! -------------------------------------------------------------------
+end subroutine d_convert_to_HB
+
+subroutine d_sort_col_vals(cols,vals)
+    integer,intent(inout),dimension(:)    :: cols
+    double precision,intent(inout),dimension(:) :: vals
+    integer :: tmp_col
+    double precision:: tmp_val
+    integer :: i  , j , n
+    logical :: test
+    n = size(cols)
+
+    test = .true.
+
+    ! sortowanie bombelkowe
+    do while(test)
+      test = .false.
+      do i = 1 , n-1
+        if( cols(i) > cols(i+1)  ) then
+        tmp_col   = cols(i)
+        cols(i)   = cols(i+1)
+        cols(i+1) = tmp_col
+
+        tmp_val   = vals(i)
+        vals(i)   = vals(i+1)
+        vals(i+1) = tmp_val
+
+        test = .true.
+        exit
+        endif
+      enddo
+    enddo
+end subroutine d_sort_col_vals
+
+subroutine solve_system_iters(N,EXPECTED_SOLUTION,HB_ROWS,COLS,VALS,VECB,CONVERGED)
+
+	INTEGER :: N
+	DOUBLE PRECISION, dimension(:) :: EXPECTED_SOLUTION
+	double precision,dimension(:) :: VALS
+	double precision,dimension(:) :: VECB
+	integer,dimension(:)  :: COLS
+	integer,dimension(:)    :: HB_ROWS
+	integer :: CONVERGED
+	INTEGER,parameter :: SSIZE = 128
+
+	INTEGER IPAR(SSIZE) , NRST
+	DOUBLE PRECISION DPAR(SSIZE)
+	DOUBLE PRECISION, allocatable,dimension(:) :: TMP,RHS,B,COMPUTED_SOLUTION,RESIDUAL,BILUT
+	INTEGER RCI_REQUEST,ITERCOUNT,MAXFIL,IERR,matsize
+    DOUBLE PRECISION DVAR,DNRM2,TOL
+	LOGICAL :: failed
+
+
+    INTEGER, allocatable,dimension(:)  :: IBILUT,JBILUT
+
+
+
+!---------------------------------------------------------------------------
+! Initialize the solver
+!---------------------------------------------------------------------------
+CONVERGED   = 1
+MAXFIL      = 20
+NRST        = 150
+
+
+allocate(TMP(N*(2*NRST+1)+(NRST*(NRST+9))/2+1))
+allocate(RHS(N))
+allocate(BILUT((2*maxfil+1)*n-maxfil*(maxfil+1)+1))
+allocate(JBILUT((2*maxfil+1)*n-maxfil*(maxfil+1)+1))
+allocate(IBILUT(N+1))
+allocate(B(N))
+allocate(COMPUTED_SOLUTION(N))
+allocate(RESIDUAL(N))
+
+failed = .false.
+COMPUTED_SOLUTION = EXPECTED_SOLUTION
+RHS		  = VECB
+B		  = VECB
+
+CALL DFGMRES_INIT(N, COMPUTED_SOLUTION, RHS, RCI_REQUEST, IPAR, DPAR, TMP)
+IF (RCI_REQUEST .NE. 0) then
+ print*,"Failed to initialize DFGMRES_INIT",RCI_REQUEST
+ CONVERGED = 0
+else
+ print*,"Initialized OK"
+endif
+
+
+
+!---------------------------------------------------------------------------
+! Calculate ILUT preconditioner.
+!                      !ATTENTION!
+! DCSRILUT routine uses some IPAR, DPAR set by DFGMRES_INIT routine.
+! Important for DCSRILUT default entries set by DFGMRES_INIT are
+! ipar(2) = 6 - output of error messages to the screen,
+! ipar(6) = 1 - allow output of error messages,
+! ipar(31)= 0 - abort DCSRILUT calculations if routine meets zero diagonal element.
+! ipar(7) = 1 - output warn messages if any and continue
+!
+! If ILUT is going to be used out of MKL FGMRES context, than the values
+! of ipar(2), ipar(6), ipar(31), and dpar(31), should be user
+! provided before the DCSRILUT routine call.
+!
+! In this example, specific for DCSRILUT entries are set in turn:
+! ipar(31)= 1 - change small diagonal value to that given by dpar(31),
+! dpar(31)= 1.D-5  instead of the default value set by DFGMRES_INIT.
+!                  It is the target value of the diagonal value if it is
+!                  small as compared to given tolerance multiplied
+!                  by the matrix row norm and the routine should
+!                  change it rather than abort DCSRILUT calculations.
+!---------------------------------------------------------------------------
+
+	IPAR(31)=1
+	DPAR(31)=10.D-5
+	TOL=1.D-6
+	MAXFIL=1
+
+	CALL DCSRILUT(N,  VALS, HB_ROWS, COLS, BILUT, IBILUT, JBILUT,TOL, MAXFIL, IPAR, DPAR, IERR)
+
+    matsize = size(VALS(:))
+    DVAR = DNRM2(matsize, BILUT, 1)
+
+	IF(IERR.ne.0) THEN
+	  WRITE(*,'(A,A,I1)') ' Error after calculation of the',&
+     	' preconditioner DCSRILUT',IERR
+      CONVERGED = 0
+	ENDIF
+
+
+!---------------------------------------------------------------------------
+! Set the desired parameters:
+! do the restart after 2 iterations
+! LOGICAL parameters:
+! do not do the stopping test for the maximal number of iterations
+! do the Preconditioned iterations of FGMRES method
+! DOUBLE PRECISION parameters
+! set the relative tolerance to 1.0D-3 instead of default value 1.0D-6
+!---------------------------------------------------------------------------
+      IPAR(15)=2
+      IPAR(8)=0
+      IPAR(11)=1
+
+
+      !IPAR(9)=0
+      !IPAR(10)=1
+      !IPAR(12)=1
+      IPAR(5)=1000
+      DPAR(1)=1.0D-4
+!---------------------------------------------------------------------------
+! Check the correctness and consistency of the newly set parameters
+!---------------------------------------------------------------------------
+CALL DFGMRES_CHECK(N, COMPUTED_SOLUTION, RHS, RCI_REQUEST,IPAR, DPAR, TMP)
+IF (RCI_REQUEST .NE. 0) then
+ print*,"Failed to check correctness DFGMRES_CHECK",RCI_REQUEST
+ CONVERGED = 0
+else
+ print*,"Correctness OK"
+endif
+
+if(.false.) then
+!---------------------------------------------------------------------------
+! Print the info about the RCI FGMRES method
+!---------------------------------------------------------------------------
+      PRINT *, ''
+      PRINT *,'Some info about the current run of RCI FGMRES method:'
+      PRINT *, ''
+      IF (IPAR(8).NE.0) THEN
+         WRITE(*,'(A,I1,A,A)') 'As IPAR(8)=',IPAR(8),', the automatic',&
+      ' test for the maximal number of iterations will be'
+         PRINT *,'performed'
+      ELSE
+      	WRITE(*,'(A,I1,A,A)') 'As IPAR(8)=',IPAR(8),', the automatic',&
+      ' test for the maximal number of iterations will be'
+      	PRINT *,'skipped'
+      ENDIF
+      PRINT *,'+++'
+      IF (IPAR(9).NE.0) THEN
+      	WRITE(*,'(A,I1,A,A)') 'As IPAR(9)=',IPAR(9),', the automatic',&
+      ' residual test will be performed'
+      ELSE
+      	WRITE(*,'(A,I1,A,A)') 'As IPAR(9)=',IPAR(9),', the automatic',&
+      ' residual test will be skipped'
+      ENDIF
+      PRINT *,'+++'
+      IF (IPAR(10).NE.0) THEN
+      	WRITE(*,'(A,I1,A,A)') 'As IPAR(10)=',IPAR(10),', the',&
+      ' user-defined stopping test will be requested via'
+      	PRINT *,'RCI_REQUEST=2'
+      ELSE
+      	WRITE(*,'(A,I1,A,A)') 'As IPAR(10)=',IPAR(10),', the',&
+      ' user-defined stopping test will not be requested, thus,'
+      	PRINT *,'RCI_REQUEST will not take the value 2'
+      ENDIF
+      PRINT *,'+++'
+      IF (IPAR(11).NE.0) THEN
+      	WRITE(*,'(A,I1,A,A)') 'As IPAR(11)=',IPAR(11),', the',&
+      ' Preconditioned FGMRES iterations will be performed, thus,'
+      	WRITE(*,'(A,A)') 'the preconditioner action will be requested',&
+      ' via RCI_REQUEST=3'
+      ELSE
+      	WRITE(*,'(A,I1,A,A)') 'As IPAR(11)=',IPAR(11),', the',&
+      ' Preconditioned FGMRES iterations will not be performed,'
+      	WRITE(*,'(A)') 'thus, RCI_REQUEST will not take the value 3'
+      ENDIF
+      PRINT *,'+++'
+      IF (IPAR(12).NE.0) THEN
+      	WRITE(*,'(A,I1,A,A)') 'As IPAR(12)=',IPAR(12),', the automatic',&
+      ' test for the norm of the next generated vector is'
+      	WRITE(*,'(A,A)') 'not equal to zero up to rounding and',&
+      ' computational errors will be performed,'
+      	PRINT *,'thus, RCI_REQUEST will not take the value 4'
+      ELSE
+      	WRITE(*,'(A,I1,A,A)') 'As IPAR(12)=',IPAR(12),', the automatic',&
+      ' test for the norm of the next generated vector is'
+      	WRITE(*,'(A,A)') 'not equal to zero up to rounding and',&
+      ' computational errors will be skipped,'
+      	WRITE(*,'(A,A)') 'thus, the user-defined test will be requested',&
+      ' via RCI_REQUEST=4'
+      ENDIF
+      PRINT *,'+++'
+endif
+!---------------------------------------------------------------------------
+! Compute the solution by RCI (P)FGMRES solver with preconditioning
+! Reverse Communication starts here
+!---------------------------------------------------------------------------
+1     CALL DFGMRES(N, COMPUTED_SOLUTION, RHS, RCI_REQUEST, IPAR, DPAR, TMP)
+
+
+!---------------------------------------------------------------------------
+! If RCI_REQUEST=0, then the solution was found with the required precision
+!---------------------------------------------------------------------------
+      IF (RCI_REQUEST.EQ.0) GOTO 3
+!---------------------------------------------------------------------------
+! If RCI_REQUEST=1, then compute the vector A*TMP(IPAR(22))
+! and put the result in vector TMP(IPAR(23))
+!---------------------------------------------------------------------------
+      IF (RCI_REQUEST.EQ.1) THEN
+      	CALL MKL_DCSRGEMV('N',N, VALS, HB_ROWS, COLS, TMP(IPAR(22)), TMP(IPAR(23)))
+      	GOTO 1
+      ENDIF
+!---------------------------------------------------------------------------
+! If RCI_request=2, then do the user-defined stopping test
+! The residual stopping test for the computed solution is performed here
+!---------------------------------------------------------------------------
+! NOTE: from this point vector B(N) is no longer containing the right-hand
+! side of the problem! It contains the current FGMRES approximation to the
+! solution. If you need to keep the right-hand side, save it in some other
+! vector before the call to DFGMRES routine. Here we saved it in vector
+! RHS(N). The vector B is used instead of RHS to preserve the original
+! right-hand side of the problem and guarantee the proper restart of FGMRES
+! method. Vector B will be altered when computing the residual stopping
+! criterion!
+!---------------------------------------------------------------------------
+      IF (RCI_REQUEST.EQ.2) THEN
+! Request to the DFGMRES_GET routine to put the solution into B(N) via IPAR(13)
+      	IPAR(13)=1
+! Get the current FGMRES solution in the vector B(N)
+      	CALL DFGMRES_GET(N, COMPUTED_SOLUTION, B, RCI_REQUEST, IPAR, DPAR, TMP, ITERCOUNT)
+! Compute the current true residual via MKL (Sparse) BLAS routines
+      	CALL MKL_DCSRGEMV('N', N, VALS, HB_ROWS, COLS, B, RESIDUAL)
+      	CALL DAXPY(N, -1.0D0, RHS, 1, RESIDUAL, 1)
+      	DVAR= sqrt(sum(RESIDUAL**2))
+      	IF (DVAR .LT. DPAR(1)) THEN
+      	   GOTO 3
+      	ELSE
+      	   GOTO 1
+      	ENDIF
+      ENDIF
+
+!---------------------------------------------------------------------------
+! If RCI_REQUEST=3, then apply the preconditioner on the vector
+! TMP(IPAR(22)) and put the result in vector TMP(IPAR(23))
+! Here is the recommended usage of the result produced by ILUT routine
+! via standard MKL Sparse Blas solver routine mkl_dcsrtrsv.
+!---------------------------------------------------------------------------
+      IF (RCI_REQUEST.EQ.3) THEN
+       print*,"asd",DVAR
+       CALL MKL_DCSRTRSV('L','N','U',N,BILUT,IBILUT,JBILUT,TMP(IPAR(22)),EXPECTED_SOLUTION)
+       CALL MKL_DCSRTRSV('U','N','N',N,BILUT,IBILUT,JBILUT,EXPECTED_SOLUTION,TMP(IPAR(23)))
+       GOTO 1
+      ENDIF
+!---------------------------------------------------------------------------
+! If RCI_REQUEST=4, then check if the norm of the next generated vector is
+! not zero up to rounding and computational errors. The norm is contained
+! in DPAR(7) parameter
+!---------------------------------------------------------------------------
+      IF (RCI_REQUEST.EQ.4) THEN
+      	IF (DPAR(7).LT.1.0D-12) THEN
+      	   GOTO 3
+      	ELSE
+      	   GOTO 1
+      	ENDIF
+!---------------------------------------------------------------------------
+! If RCI_REQUEST=anything else, then DFGMRES subroutine failed
+! to compute the solution vector: COMPUTED_SOLUTION(N)
+!---------------------------------------------------------------------------
+      ELSE
+!---------------------------------------------------------------------------
+! Release internal MKL memory that might be used for computations
+! NOTE: It is important to call the routine below to avoid memory leaks
+! unless you disable MKL Memory Manager
+!---------------------------------------------------------------------------
+        WRITE( *,'(A,A,I5)') 'This example FAILED as the solver has',&
+          ' returned the ERROR code', RCI_REQUEST
+          CALL MKL_FREE_BUFFERS
+          CONVERGED = 0
+      ENDIF
+!---------------------------------------------------------------------------
+! Reverse Communication ends here
+! Get the current iteration number and the FGMRES solution. (DO NOT FORGET to
+! call DFGMRES_GET routine as computed_solution is still containing
+! the initial guess!). Request to DFGMRES_GET to put the solution into
+! vector COMPUTED_SOLUTION(N) via IPAR(13)
+!---------------------------------------------------------------------------
+3     IPAR(13)=0
+      CALL DFGMRES_GET(N, COMPUTED_SOLUTION, RHS, RCI_REQUEST, IPAR, DPAR, TMP, ITERCOUNT)
+
+
+!---------------------------------------------------------------------------
+! Print solution vector: COMPUTED_SOLUTION(N) and
+! the number of iterations: ITERCOUNT
+!---------------------------------------------------------------------------
+      PRINT *, ''
+      PRINT *,' The system has been solved'
+
+      PRINT *,' Number of iterations: ',ITERCOUNT
+      PRINT *,' Residual	    : ',DVAR
+
+
+!---------------------------------------------------------------------------
+! Release internal MKL memory that might be used for computations
+! NOTE: It is important to call the routine below to avoid memory leaks
+! unless you disable MKL Memory Manager
+!---------------------------------------------------------------------------
+      CALL MKL_FREE_BUFFERS
+      EXPECTED_SOLUTION = COMPUTED_SOLUTION
+
+deallocate(BILUT)
+deallocate(JBILUT)
+deallocate(IBILUT)
+deallocate(TMP)
+deallocate(RHS)
+deallocate(B)
+deallocate(COMPUTED_SOLUTION)
+deallocate(RESIDUAL)
+
+end subroutine solve_system_iters
 
 
 end module

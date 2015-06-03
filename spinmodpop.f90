@@ -13,6 +13,7 @@ MODULE spinmodpop
     complex*16,dimension(:,:),allocatable        :: Hamiltonian
     integer,dimension(:,:),allocatable           :: GINDEX ! (wezek,spin)
     double precision,dimension(:),allocatable    :: UVEC,Ey ! potencjal i pole elektryczne
+    double precision,dimension(:,:),allocatable  :: SUVEC ! z potencjalem do spinu
     complex*16,dimension(:,:),allocatable        :: Chi_m_in ! mod wchodzacy do ukladu
     complex*16,dimension(:),allocatable          :: K_m_in
     complex*16,dimension(:,:),allocatable        :: Chi_m_out ! wychodzacy
@@ -43,6 +44,7 @@ MODULE spinmodpop
       public :: spinmodpop_calc_modes_from_wfm!(pDx,pN,pEf,pB,pUvec,pbHorizontal)
       public :: spinmodpop_calc_TB_current
       public :: LICZBA_MODOW,L_M,LICZBA_MODOW_EVANESCENTYCH,ChiMod,ChiKvec,ChiLambda,MODPOP_VALS
+      public :: SUVEC
     contains
 
 ! ------------------------------------------------------------------------------------ !
@@ -489,8 +491,8 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
 
 ! Przygotowanei podmacierzy (E-H) i macierzy od raszby
     do i = 1 , N
-        Mham(i,i,1)   = UVEC(i) + 4*t0 + 0.5 * G_LAN * M_EFF * BZ - Ef
-        Mham(i,i,2)   = UVEC(i) + 4*t0 - 0.5 * G_LAN * M_EFF * BZ - Ef
+        Mham(i,i,1)   = UVEC(i) + SUVEC(i,+1) + 4*t0 + 0.5 * G_LAN * M_EFF * BZ - Ef
+        Mham(i,i,2)   = UVEC(i) + SUVEC(i,-1) + 4*t0 - 0.5 * G_LAN * M_EFF * BZ - Ef
         if(i < N) Mham(i,i+1,:) = -t0
         if(i > 1) Mham(i,i-1,:) = -t0
 

@@ -358,9 +358,15 @@ contains
 
 
         if( pKierunek == ZRODLO_KIERUNEK_PRAWO .or. pKierunek == ZRODLO_KIERUNEK_LEWO ) then
+
+            if(allocated(SUVEC)) deallocate(SUVEC)
+            allocate(SUVEC(N,-1:1))
             do i = 1 , N
                 pUVEC(i) = pUTOTAL(pX1,pY1 + i - 1)
+                SUVEC(i,+1) = SUTOTAL(pX1,pY1 + i - 1,+1) ! w jednostkach donorowych
+                SUVEC(i,-1) = SUTOTAL(pX1,pY1 + i - 1,-1) ! w jednostkach donorowych
             enddo
+
             call spinmodpop_calc_modes_from_wfm(atomic_DX,N,atomic_Ef,atomic_Bz,pUVEC,.true.)
         else ! dla zrodel gora dol
             do i = 1 , N
@@ -368,6 +374,7 @@ contains
             enddo
             call spinmodpop_calc_modes_from_wfm(atomic_DX,N,atomic_Ef,atomic_Bz,pUVEC,.false.)
         endif
+        deallocate(SUVEC)
 
 
         lModow     = LICZBA_MODOW

@@ -1,11 +1,12 @@
 
 program transporter
  use modutils
- !use modspinsystem
+ use modspinsystem
  use modjed
  use modinip
- !use modspinzrodlo
- use modsystem
+ use modspindft
+! use modspinzrodlo
+! use modsystem
  use ifport
  implicit none
 
@@ -49,30 +50,87 @@ call getDoubleValue("Dane","sigmay",sigmay)
 call getDoubleValue("Dane","xpos",xpos)
 
 
-call modjed_ustaw_konwersje_jednostek(0.0465D0,1.0D0);
+call modjed_ustaw_konwersje_jednostek(0.0465D0,12.4D0);
 
 !call modjed_ustaw_InGaAs()
 !call modjed_ustaw_InSb()
 
 
-!TRANS_SOLVER = USE_UMFPACK
-dx = atomic_dx
+
 UTOTAL = 0
-call system_inicjalizacja(NX,NY,liczba_zrodel);
 
-call zrodla(1)%zrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-call zrodla(2)%zrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
 
+
+!call system_inicjalizacja(NX,NY,liczba_zrodel);
+!
+!call zrodla(1)%zrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+!call zrodla(2)%zrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+!call system_dodaj_lorentza(1.0D0,20.0D0,20.0D0,400.0D0,50.0D0);
+!call utworz_system()
+!call system_rozwiaz_problem(1,TR_MAT)
+!
+!call system_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
+!call system_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
+!call system_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
+!UTOTAL = 0
+!call system_dodaj_lorentza(1.0D0,20.0D0,20.0D0,400.0D0,60.0D0);
+!!call system_rozwiaz_problem(1,TR_MAT)
+!!call system_zapisz_do_pliku("d_phi.txt",ZAPISZ_PHI)
+!call system_rozwiaz_problem_iteracyjnie(1,1,TR_MAT)
+!!call system_rozwiaz_problem(1,TR_MAT)
+!call system_zapisz_do_pliku("i_phi.txt",ZAPISZ_PHI)
+!call system_zapisz_do_pliku("i_pot.txt",ZAPISZ_POTENCJAL)
+!call system_zapisz_do_pliku("i_kon.txt",ZAPISZ_KONTUR)
+!
+!call system_zwalnienie_pamieci()
+!if(allocated(TR_MAT))deallocate(TR_MAT)
+
+
+
+call spinsystem_inicjalizacja(NX,NY,liczba_zrodel);
+
+do i = 1 , nx
+do j = 1 , ny
+    x = i * dx
+    y = j * dx
+    UTOTAL(i,j) = gauss_gate(omega,xpos,0.0D0,sigmax,sigmay,x,y) + &
+                  gauss_gate(omega,xpos,ny*dx,sigmax,sigmay,x,y)
+
+enddo
+enddo
+call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
 call utworz_system()
-call system_rozwiaz_problem(1,TR_MAT)
 
-call system_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
-call system_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
-call system_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
+call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
+call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
+call spinsystem_zapisz_do_pliku("flag.txt",ZAPISZ_FLAGI)
+
+TRANS_EIGPROBLEM_PERIODIC_X = .true.
+call spindft_initialize()
+
+call spindft_solve_temp_annealing()
+call spindft_free()
+
+atomic_Ef = DFT_FINDED_EF
+
+call zrodla(1)%spinzrodlo_ustaw(3,NY-3,2,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+!print*,atomic_Ef,DFT_CURR_RESIDUUM,zrodla(1)%liczba_modow
+
+call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+
+call spinsystem_rozwiaz_problem(1,TR_MAT)
+call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
+call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
+!call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
+
+!call spinsystem_widmo(0.0D0,2*atomic_Ef,150,0,8)
+!call spinsystem_widmo(0.0D0,2*atomic_Ef,150,2,8)
+!call spinsystem_zapisz_widmo_do_pliku("stany",ZAPISZ_STANY_WLASNE)
+!call spinsystem_zapisz_widmo_do_pliku("widmo.txt",ZAPISZ_WIDMO_VRTCAL)
 
 
-
-call system_zwalnienie_pamieci()
+call spinsystem_zwalnienie_pamieci()
 if(allocated(TR_MAT))deallocate(TR_MAT)
 
 
@@ -150,7 +208,7 @@ subroutine utworz_system()
     wjazd  = nx/4+20
     GFLAGS = B_EMPTY
 
-    wjazd  = nx/2+20
+    wjazd  = nx/2+3
     GFLAGS = B_EMPTY
 
     ! dajemy na brzegach dirichleta
@@ -158,8 +216,8 @@ subroutine utworz_system()
     GFLAGS(NX,:) = B_DIRICHLET
     GFLAGS(:,1)  = B_DIRICHLET
     GFLAGS(:,NY) = B_DIRICHLET
-    call system_inicjalizacja_ukladu(wjazd,2,4)
-!    call spinsystem_inicjalizacja_ukladu(wjazd,4,4)
+!    call system_inicjalizacja_ukladu(wjazd,2,4)
+    call spinsystem_inicjalizacja_ukladu(wjazd,4,4)
 end subroutine utworz_system
 
 double precision function gauss_gate(U0,xp,yp,sigmax,sigmay,x,y) result(rval)
