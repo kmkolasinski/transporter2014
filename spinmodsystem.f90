@@ -346,6 +346,7 @@ module modspinsystem
         enddo
 
         enddo ! end of iii - numerowanie po spinach
+        SUTOTAL = 0
 
     end subroutine spinsystem_inicjalizacja_ukladu
 
@@ -1592,6 +1593,7 @@ module modspinsystem
             allocate(Rerrors(M0))
        endif
         DUTOTAL = UTOTAL/1000.0/Rd
+
         ! wypelnianie macierzy
         cmatA = 0
         itmp  = 1

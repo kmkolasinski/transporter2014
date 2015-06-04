@@ -11,9 +11,14 @@ module modspindft
     doubleprecision, allocatable :: u_correlation(:,:)
     doubleprecision, allocatable :: u_hartree(:) , u_donor_hartree(:)
     doubleprecision, allocatable :: rho(:,:),new_rho(:,:),rho_tot(:) , xc_res(:,:)
-    doubleprecision, allocatable :: rho_mem(:,:,:) , broyden_R(:,:,:) , diagonal_Jm(:,:)
+    doubleprecision, allocatable :: rho_mem(:,:,:) , rho_mem_in(:,:,:)  , broyden_R(:,:,:) , diagonal_Jm(:,:) , broyden_U(:,:,:) , broyden_V(:,:,:)
 
     doubleprecision, allocatable :: VSQRTL(:,:,:)
+
+
+    ! Broyden Eli
+    doubleprecision, allocatable :: rho_pp(:,:) , rho_p(:,:) , rho_or_p(:,:) , rhoU_or(:,:)
+    doubleprecision, allocatable :: dR_u_p(:,:) , u_p(:,:,:) , v_p(:,:,:)  ,u_n(:,:) , v_n(:,:)
 
 
     integer,dimension(:,:),allocatable   :: DFTINDEX
@@ -21,16 +26,17 @@ module modspindft
     integer          :: DFT_TRANSMAX , NX , NY , DFT_NO_STATES , GLOBAL_ITER , GLOBAL_TEMP_ITER
     integer          :: DFT_DENS_NO_MEM , DFT_MAX_ITER
     integer          :: DFT_IMPROVE_FEAST_STEPS  , DFT_TEMP_NO_STEPS
+    logical          :: DFT_FIX_EF ! jesli true to wtedy gestosc nie jest wyliczana na podstawie bilansu ladonkow
     double precision :: DFT_W_PARAM , DFT_MAX_W_PARAM
     double precision :: DFT_NO_DONORS , DFT_Z_SPACER
     double precision :: DFT_TEMP ,  DFT_TEMP_MIN  , DFT_CURR_TEMP  , DFT_RESIDUUM , DFT_CURR_RESIDUUM
-    doubleprecision  :: DFT_FINDED_EF
+    doubleprecision  :: DFT_FINDED_EF , DFT_FIXED_ENERGY
     doubleprecision  :: Ef , Bz , Bx , By , DX , DFT_ATOMIC_EF
     doubleprecision  :: max_stanow , max_Ef , dft_donor_dens
 
-    public :: spindft_initialize , spindft_free , spindft_solve
+    public :: spindft_initialize , spindft_free , spindft_solve , spindft_fix_ef
     public :: spindft_solve_temp_annealing
-    public :: DFT_TEMP ,  DFT_TEMP_MIN  , DFT_MAX_ITER , DFT_CURR_RESIDUUM , DFT_FINDED_EF
+    public :: DFT_TEMP ,  DFT_TEMP_MIN  , DFT_MAX_ITER , DFT_CURR_RESIDUUM , DFT_FINDED_EF ,DFT_FIX_EF
     contains
 
 
@@ -38,7 +44,7 @@ module modspindft
     subroutine spindft_initialize()
         integer ::  i , j , iter , mx
 
-
+        DFT_FIX_EF = .false.
 
         BZ  = BtoDonorB(atomic_Bz)
         Bx  = BtoDonorB(atomic_Bx)
@@ -46,7 +52,7 @@ module modspindft
         DX  = atomic_DX*L2LR
         nx = size(GINDEX,1)
         ny = size(GINDEX,2)
-        DFT_DENS_NO_MEM = 2
+
 
         print*,"Inicjalizacja problemu SPIN-DFT"
 
@@ -65,6 +71,9 @@ module modspindft
         call getIntValue   ("DFT","max_iter",DFT_MAX_ITER)
         call getIntValue   ("DFT","init_states",DFT_NO_STATES)
         call getIntValue   ("DFT","improve_feast",DFT_IMPROVE_FEAST_STEPS)
+        print*,"Problem uzbiezniany na podstawie liczby donorow: DFT_FIX_EF = false"
+
+        DFT_DENS_NO_MEM = DFT_MAX_ITER
 
         Ef = DFT_ATOMIC_EF/1000.0/Rd
 
@@ -105,19 +114,38 @@ module modspindft
         allocate(xc_res(DFT_TRANSMAX,3))
 
         allocate(rho_mem(DFT_TRANSMAX,-1:1,DFT_DENS_NO_MEM))
+        allocate(rho_mem_in(DFT_TRANSMAX,-1:1,DFT_DENS_NO_MEM))
         allocate(broyden_R(DFT_TRANSMAX,-1:1,DFT_DENS_NO_MEM))
+        allocate(broyden_U(DFT_TRANSMAX,-1:1,DFT_DENS_NO_MEM))
+        allocate(broyden_V(DFT_TRANSMAX,-1:1,DFT_DENS_NO_MEM))
         allocate(diagonal_Jm(DFT_TRANSMAX,-1:1))
 
+        allocate(rho_pp(DFT_TRANSMAX,-1:1))
+        allocate(rho_p(DFT_TRANSMAX,-1:1))
+        allocate(rho_or_p(DFT_TRANSMAX,-1:1))
+        allocate(rhoU_or(DFT_TRANSMAX,-1:1))
+        allocate(dR_u_p(DFT_TRANSMAX,-1:1))
+        allocate(v_n(DFT_TRANSMAX,-1:1))
+        allocate(u_n(DFT_TRANSMAX,-1:1))
+        allocate(u_p(DFT_TRANSMAX,-1:1,DFT_DENS_NO_MEM))
+        allocate(v_p(DFT_TRANSMAX,-1:1,DFT_DENS_NO_MEM))
+        v_n = 0
+        u_n = 0
+        v_p = 0
+        u_p = 0
+        dR_u_p = 0
 
 
         if(TRANS_EIGPROBLEM_PERIODIC_X) then
-            DFT_NO_INTEGRAL_REPEAT_X = 5
+            DFT_NO_INTEGRAL_REPEAT_X = 8
             allocate(VSQRTL(0:nx*DFT_NO_INTEGRAL_REPEAT_X,0:ny,0:1)) ! dwie warstwy 0 (na gaz) i 1 (na donory)
         else
             allocate(VSQRTL(0:nx,0:ny,0:1)) ! dwie warstwy 0 (na gaz) i 1 (na donory)
             DFT_NO_INTEGRAL_REPEAT_X = 1
         endif
 
+
+        ! obliczanie pierwiastkow
         do i = 0 , nx * DFT_NO_INTEGRAL_REPEAT_X
         do j = 0 , ny
             ! w plaszczyznie gazu
@@ -143,21 +171,32 @@ module modspindft
         rho_tot   = 0 !      dft_donor_dens
         rho       = 0 ! 0.5*dft_donor_dens
         new_rho   = 0 !      dft_donor_dens
-        do i = 1 , DFT_TRANSMAX
-            new_rho(i,-1) = rand()
-            new_rho(i,+1) = rand()
-        enddo
-        new_rho =new_rho / sum(new_rho)*dx*dx * DFT_NO_DONORS
-        rho_tot  = new_rho(:,-1) + new_rho(:,+1)
+!        do i = 1 , DFT_TRANSMAX
+!            new_rho(i,-1) = rand()
+!            new_rho(i,+1) = rand()
+!        enddo
+!        new_rho =new_rho / sum(new_rho)*dx*dx * DFT_NO_DONORS
+!        rho_tot  = new_rho(:,-1) + new_rho(:,+1)
 
         rho_mem   = 0
+        rho_mem_in= 0
         broyden_R = 0
+        broyden_U = 0
+        broyden_V = 0
 
 
         DFT_FINDED_EF = 0
 
 
     end subroutine spindft_initialize
+
+    ! podajemy energie w jednostach [meV]
+    subroutine spindft_fix_ef(fixed_ef)
+        doubleprecision ::fixed_ef
+        DFT_FIX_EF = .true.
+        Ef = fixed_ef / 1000.0 / Rd
+        DFT_FIXED_ENERGY = Ef
+    end subroutine
 
 
     subroutine spindft_solve_temp_annealing()
@@ -198,6 +237,7 @@ module modspindft
         integer :: i,j,m
         ! obliczenia startowe dla gestosci elektronowej takiej samej
         ! jak gestosc donorow
+        GLOBAL_ITER = 1
         call spinsystem_widmo(0.0D0,DFT_ATOMIC_EF,DFT_NO_STATES,0,8)
 668     if(Widmo_NoStates < DFT_NO_DONORS) then
             print*,"Za mala energia."
@@ -216,7 +256,6 @@ module modspindft
             GLOBAL_TEMP_ITER  = GLOBAL_TEMP_ITER + 1
 
             print*,"Iteracja DFT:",GLOBAL_ITER
-
             kbT       = 8.617D-5/Rd*DFT_CURR_TEMP
             print*,"Temperatura", kbT * Rd / 8.617D-5
 
@@ -242,12 +281,12 @@ module modspindft
             enddo
             enddo
 
-            write(333,*),GLOBAL_TEMP_ITER,DFT_CURR_TEMP,GLOBAL_ITER,Ef*1000*Rd
+            write(333,"(20f20.6)"),GLOBAL_TEMP_ITER+0.0D0,DFT_CURR_TEMP,GLOBAL_ITER+0.0,Ef*1000*Rd,DFT_CURR_RESIDUUM
 
             do i = 1 , nx
             do j = 1 , ny
                 if(DFTINDEX(i,j) > 0 ) &
-                write(222,"(20f20.6)"),i*atomic_DX,j*atomic_DX,new_rho(DFTINDEX(i,j),1),new_rho(DFTINDEX(i,j),-1)!,diagonal_Jm(DFTINDEX(i,j),1),diagonal_Jm(DFTINDEX(i,j),-1)
+                write(222,"(20f20.6)"),i*atomic_DX,j*atomic_DX,new_rho(DFTINDEX(i,j),1),new_rho(DFTINDEX(i,j),-1)
             enddo
                 write(222,*),""
             enddo
@@ -261,6 +300,7 @@ module modspindft
                 write(555,*),""
             enddo
             close(555)
+
 
 !            m = 2
 !            do i = 1-m*NX , (m+1)*NX
@@ -290,14 +330,17 @@ module modspindft
 
 
     subroutine spindft_free()
-        if(allocated(DFTINDEX)) deallocate(DFTINDEX)
+        if(allocated(DFTINDEX))   deallocate(DFTINDEX)
         if(allocated(u_hartree))  deallocate(u_hartree)
         if(allocated(u_donor_hartree))  deallocate(u_donor_hartree)
-        if(allocated(u_exchange)) deallocate(u_exchange)
+        if(allocated(u_exchange))  deallocate(u_exchange)
         if(allocated(u_correlation)) deallocate(u_correlation)
         if(allocated(rho))         deallocate(rho)
         if(allocated(rho_mem))     deallocate(rho_mem)
+        if(allocated(rho_mem_in))  deallocate(rho_mem_in)
         if(allocated(broyden_R))   deallocate(broyden_R)
+        if(allocated(broyden_U))   deallocate(broyden_U)
+        if(allocated(broyden_V))   deallocate(broyden_V)
         if(allocated(diagonal_Jm)) deallocate(diagonal_Jm)
         if(allocated(new_rho))     deallocate(new_rho)
         if(allocated(rho_tot))     deallocate(rho_tot)
@@ -438,19 +481,27 @@ module modspindft
 
     ndonor = DFT_NO_DONORS
 
+    ! jesli energia fermiego jest ustalona to wtedy nie liczymy gestosci
+    ! z zachowania ladunku
+    if(DFT_FIX_EF == .false. .or. GLOBAL_ITER < 5) then
+        Efa = -100
+        Efb =  100.0
+        Na  = (calcfermiSum(Efa)-ndonor)
+        do while( abs(calcfermiSum(Ef)-ndonor) > 1.0E-8 )
+          Ef = (Efa+Efb)/2
+          if ( Na*(calcfermiSum(Ef)-ndonor) < 0.0 ) then
+              Efb = Ef
+          else
+              Efa = Ef
+          endif
+          Na  = (calcfermiSum(Efa)-ndonor)
+        enddo
+    else
+        Ef = DFT_FIXED_ENERGY
+    endif
 
-    Efa = -100
-    Efb =  100.0
-    Na  = (calcfermiSum(Efa)-ndonor)
-    do while( abs(calcfermiSum(Ef)-ndonor) > 1.0E-8 )
-      Ef = (Efa+Efb)/2
-      if ( Na*(calcfermiSum(Ef)-ndonor) < 0.0 ) then
-          Efb = Ef
-      else
-          Efa = Ef
-      endif
-      Na  = (calcfermiSum(Efa)-ndonor)
-    enddo
+
+
     dens_ele = calcfermiNele(Ef)
 
 
@@ -501,7 +552,6 @@ module modspindft
         print*,"ERROR:Zle wyliczana warunek rownowagi ladunkowej"
         print*,"    ====================================="
         print("(A,f16.6)"),"     = L. don. w ukadzie:",ndonor
-        print("(A,f16.6)"),"     = L. ele. z bilansu:",dens_ele
         print("(A,f16.6)"),"     = Roznica ele - don:",dens_ele - ndonor
         print("(A,f16.6)"),"     = L. rho up        :",sum(new_rho(:,+1))*DX*DX
         print("(A,f16.6)"),"     = L. rho down      :",sum(new_rho(:,-1))*DX*DX
@@ -593,49 +643,137 @@ module modspindft
     end function calcFermiSum
 
 
-    subroutine mix_densities(in_rho,out_rho)
-        doubleprecision, allocatable :: in_rho(:,:),out_rho(:,:)
-        integer :: mem , s , i
+    subroutine mix_densities(rho_or,rho)
+        doubleprecision, allocatable :: rho_or(:,:),rho(:,:)
+        integer :: mem , s , i , it_u
+        doubleprecision ::  calka_dRU , calka_dRD
 
-
-        print*,"Residuum:"
-        ! przesuwanie tablic
-        do mem = DFT_DENS_NO_MEM , 2 , -1
-            rho_mem  (:,:,mem) = rho_mem  (:,:,mem-1)
-            broyden_R(:,:,mem) = broyden_R(:,:,mem-1)
-            print*,"Past:",mem," residuum:",sum(abs(broyden_R(:,1,mem)))*dx*dx
-        enddo
-
-        broyden_R(:,:,1) = in_rho - rho_mem(:,:,1) ! bierzemy roznice Fx - x
-        DFT_CURR_RESIDUUM = sum(abs(broyden_R(:,1,1)))*dx*dx
-        print*,"Past:",mem," residuum:",DFT_CURR_RESIDUUM
-        print*,""
-
-        if(GLOBAL_ITER == 1) then
-            out_rho = in_rho
-        else  if(GLOBAL_ITER == 2) then! proste mieszanie
-            !out_rho = in_rho*(DFT_W_PARAM ) + rho_mem(:,:,1)*(1.0 - DFT_W_PARAM )
-            out_rho = rho_mem(:,:,1) + DFT_W_PARAM * broyden_R(:,:,1)
+! ! 	it=0 - w. poczatkowy, nie ma mieszania
+! ! 	it=1 - rho_1 = rho_0 normalnie zmieszane z rho_or_1
+! ! 	it=2 - rho_2 = rho_1 normalnie zmieszane z rho_or_2
+! ! ! 	  mieszanie:
+	    if(GLOBAL_ITER .ne. 1 ) then
+        if(GLOBAL_ITER  <= 3  ) then
+            write(*,*) GLOBAL_ITER," jeszcze zwykle mieszanie"
+            rho  =rho_or*DFT_W_PARAM + rho_p*(1.D0-DFT_W_PARAM)
         else
-            ! mieszanie na podstawie: http://www.ondrejcertik.com/media/cookbook/master.pdf
-            ! wzor (3.28)
-            do i = 1 , DFT_TRANSMAX
-                do s = 1 , -1 , -2
-                if( broyden_R(i,s,1)*broyden_R(i,s,2) > 0 ) then
-                    diagonal_Jm(i,s) = diagonal_Jm(i,s) + DFT_W_PARAM
-                    if(diagonal_Jm(i,s) > DFT_MAX_W_PARAM) diagonal_Jm(i,s) = DFT_MAX_W_PARAM
-                else
-                    diagonal_Jm(i,s) =  DFT_W_PARAM
-                endif
-                enddo ! of s
+            write(*,*) GLOBAL_ITER," mieszanie Broydena"
+            it_u = GLOBAL_ITER - 3
+
+            calka_dRU=0.D0; calka_dRD=0.D0
+            dR_u_p = rho_or - rho_p - rho_or_p + rho_pp
+
+            do i=1,DFT_TRANSMAX
+              calka_dRU=calka_dRU+abs(dR_u_p(i,+1))**2
+              calka_dRD=calka_dRD+abs(dR_u_p(i,-1))**2
             enddo
-            out_rho = rho_mem(:,:,1) + diagonal_Jm * broyden_R(:,:,1)
 
-        endif
+            call multiply_Jac(it_u-1,u_p,v_p,dR_u_p,u_n)
+            u_p(:,:,it_u)=  rho_p - rho_pp - u_n
 
-        rho_mem(:,:,1)   = out_rho(:,:) ! aktualizujemy gestosc na pierwszym miejscu
+            v_p(:,+1,it_u)=dR_u_p(:,+1)/calka_dRU
+            v_p(:,-1,it_u)=dR_u_p(:,-1)/calka_dRD
+
+            u_n = rho_or - rho_p
+            call multiply_Jac(it_u,u_p,v_p,u_n,v_n)
+            rho= -v_n + rho_p
+
+!! ! ! 		zaalokowac tablice do it_u+1
+!		call expand_uv(it_u,uU_p,uD_p,vU_p,vD_p)
+	      endif
+	    else
+          write(*,*) GLOBAL_ITER," przepisywanie gestosci"
+          rho = rho_or
+	    endif
+! ! 	  przepisanie tablic:
+	    rho_pp     =rho_p
+	    rho_p      =rho
+	    rho_or_p   =rho_or
+
+        DFT_CURR_RESIDUUM = sum(abs(rho_or-rho))*dx*dx
+
+!        print*,"Residuum:"
+!        ! przesuwanie tablic
+!        do mem = DFT_DENS_NO_MEM , 2 , -1
+!            rho_mem_in(:,:,mem) = rho_mem_in(:,:,mem-1)
+!            rho_mem  (:,:,mem)  = rho_mem  (:,:,mem-1)
+!            broyden_R(:,:,mem)  = broyden_R(:,:,mem-1)
+!            broyden_U(:,:,mem)  = broyden_U(:,:,mem-1)
+!            broyden_V(:,:,mem)  = broyden_V(:,:,mem-1)
+!            print*,"Past:",mem," residuum:",sum(abs(broyden_V(:,1,mem)))*dx*dx
+!        enddo
+!
+!        ! w tablicy
+!        broyden_R(:,:,1)  = in_rho - rho_mem(:,:,1) ! bierzemy roznice Fx - x
+!
+!
+!
+!
+!        DFT_CURR_RESIDUUM = sum(abs(broyden_R(:,1,1)))*dx*dx
+!        print*,"Past:",1," residuum:",DFT_CURR_RESIDUUM
+!        print*,""
+!
+!        if(GLOBAL_ITER == 1) then
+!            out_rho = in_rho
+!        else  if(GLOBAL_ITER == 2) then! proste mieszanie
+!            out_rho = rho_mem(:,:,1) + DFT_W_PARAM * broyden_R(:,:,1)
+!        else
+!            ! mieszanie na podstawie: http://www.ondrejcertik.com/media/cookbook/master.pdf
+!            ! wzor (3.28)
+!!            do i = 1 , DFT_TRANSMAX
+!!                do s = 1 , -1 , -2
+!!                if( broyden_R(i,s,1)*broyden_R(i,s,2) > 0 ) then
+!!                    diagonal_Jm(i,s) = diagonal_Jm(i,s) + DFT_W_PARAM
+!!                    if(diagonal_Jm(i,s) > DFT_MAX_W_PARAM) diagonal_Jm(i,s) = DFT_MAX_W_PARAM
+!!                else
+!!                    diagonal_Jm(i,s) =  DFT_W_PARAM
+!!                endif
+!!                enddo ! of s
+!!            enddo
+!!            out_rho = rho_mem(:,:,1) + diagonal_Jm * broyden_R(:,:,1)
+!
+!            do s = 1 , -1 , -2
+!                broyden_U(:,s,1) = (rho_mem(:,s,2) - rho_mem(:,s,3)) + DFT_W_PARAM * ( broyden_R(:,s,1) - broyden_R(:,s,2) )
+!                do mem = 2 , DFT_DENS_NO_MEM
+!                    broyden_U(:,s,1) = broyden_U(:,s,1) - broyden_U(:,s,mem) * sum(broyden_V(:,s,mem)* ( broyden_R(:,s,1) - broyden_R(:,s,2) ) )
+!                enddo
+!                broyden_V(:,s,1) = ( broyden_R(:,s,1) - broyden_R(:,s,2) )/sum(abs(broyden_R(:,s,1) - broyden_R(:,s,2))**2)
+!            enddo
+!
+!            do s = 1 , -1 , -2
+!                out_rho(:,s) =  rho_mem(:,s,1) + DFT_W_PARAM * ( broyden_R(:,s,1) )
+!                do mem = 1 , DFT_DENS_NO_MEM
+!                    out_rho(:,s) = out_rho(:,s) - broyden_U(:,s,mem) * sum(broyden_V(:,s,mem)* ( broyden_R(:,s,1) ) )
+!                enddo
+!            enddo
+!
+!
+!        endif
+!
+!        rho_mem(:,:,1)   = out_rho(:,:) ! aktualizujemy gestosc na pierwszym miejscu
 
     end subroutine mix_densities
 
+
+	subroutine multiply_Jac(size_u,tab_u,tab_v,tab_i,tab_o)
+
+	  integer, intent(in)::size_u
+	  double precision,dimension(:,:),allocatable,intent(in)::tab_i
+	  double precision,dimension(:,:,:),allocatable,intent(in)::tab_u,tab_v
+	  double precision,dimension(:,:),allocatable::tab_o
+	  integer ::  is,ij1,ij2
+
+	  tab_o= -DFT_W_PARAM * tab_i
+
+	  do is=1,size_u
+	    do ij1=1,DFT_TRANSMAX
+	      do ij2=1,DFT_TRANSMAX
+            tab_o(ij1,+1)=tab_o(ij1,+1)+tab_u(ij1,+1,is)*tab_v(ij2,+1,is)*tab_i(ij2,+1)
+            tab_o(ij1,-1)=tab_o(ij1,-1)+tab_u(ij1,-1,is)*tab_v(ij2,-1,is)*tab_i(ij2,-1)
+	      enddo
+	    enddo
+	  enddo
+
+	end subroutine multiply_Jac
 
 endmodule

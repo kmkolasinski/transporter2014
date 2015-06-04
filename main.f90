@@ -89,6 +89,7 @@ UTOTAL = 0
 
 call spinsystem_inicjalizacja(NX,NY,liczba_zrodel);
 
+UTOTAL = 0
 do i = 1 , nx
 do j = 1 , ny
     x = i * dx
@@ -98,6 +99,9 @@ do j = 1 , ny
 
 enddo
 enddo
+call spinsystem_zapisz_do_pliku("pot1.txt",ZAPISZ_POTENCJAL)
+!UTOTAL = 0
+
 call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
 call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
 call utworz_system()
@@ -108,19 +112,40 @@ call spinsystem_zapisz_do_pliku("flag.txt",ZAPISZ_FLAGI)
 
 TRANS_EIGPROBLEM_PERIODIC_X = .true.
 call spindft_initialize()
-
 call spindft_solve_temp_annealing()
-call spindft_free()
+
+
+
 
 atomic_Ef = DFT_FINDED_EF
+call zrodla(1)%spinzrodlo_ustaw(3,NY-3,5,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+write(111,*),atomic_Ef,DFT_CURR_RESIDUUM,zrodla(1)%liczba_modow
 
-call zrodla(1)%spinzrodlo_ustaw(3,NY-3,2,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-!print*,atomic_Ef,DFT_CURR_RESIDUUM,zrodla(1)%liczba_modow
 
-call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+UTOTAL = 0
+do i = 1 , nx
+do j = 1 , ny
+    x = i * dx
+    y = j * dx
+    UTOTAL(i,j) = gauss_gate(omega,xpos,0.0D0,sigmax,sigmay,x,y) + &
+                  gauss_gate(omega,xpos,ny*dx,sigmax,sigmay,x,y)
+enddo
+enddo
+call spindft_free()
+call spindft_initialize()
+call spindft_fix_ef(atomic_Ef)
+call spindft_solve_temp_annealing()
 
-call spinsystem_rozwiaz_problem(1,TR_MAT)
-call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
+
+
+call spindft_free()
+atomic_Ef = DFT_FINDED_EF
+call zrodla(1)%spinzrodlo_ustaw(3,NY-3,5,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+write(111,*),atomic_Ef,DFT_CURR_RESIDUUM,zrodla(1)%liczba_modow
+!call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+!
+!call spinsystem_rozwiaz_problem(1,TR_MAT)
+!call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
 call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
 !call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
 

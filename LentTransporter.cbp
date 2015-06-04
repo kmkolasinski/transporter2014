@@ -73,6 +73,7 @@
 		<Unit filename="modpop.F90">
 			<Option weight="1" />
 		</Unit>
+		<Unit filename="modspindft.f90" />
 		<Unit filename="modspinzrodlo.f90" />
 		<Unit filename="modsystem.f90" />
 		<Unit filename="modutils.F90">
