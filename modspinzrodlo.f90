@@ -33,6 +33,7 @@ implicit none
         doubleprecision,dimension(:,:),allocatable:: TR          ! (mod,-1-R,+1-T) - Prawdopodobienstwo przejscia/odbicia
 
         doubleprecision,dimension(:),allocatable  :: Uvec
+        doubleprecision,dimension(:,:),allocatable  :: SpinUVec
         doubleprecision,dimension(:),allocatable  :: Ey
 !        complex*16,dimension(:),allocatable       :: deltamk  ! tablica pomocnicza przyspieszajaca liczenie elementow macierzowych
 !        complex*16,dimension(:),allocatable       :: deltaink  ! tablica pomocnicza przyspieszajaca liczenie elementow macierzowych
@@ -102,6 +103,7 @@ contains
         if(TRANS_DEBUG==.true.) print*,"Spinzrodlo: Zwalanianie pamieci"
         if(allocated(zrodlo%ChiKvec))    deallocate(zrodlo%ChiKvec);
         if(allocated(zrodlo%Uvec))       deallocate(zrodlo%Uvec);
+        if(allocated(zrodlo%SpinUVec))   deallocate(zrodlo%SpinUVec);
         if(allocated(zrodlo%Ey))         deallocate(zrodlo%Ey);
         if(allocated(zrodlo%ChiLambda))  deallocate(zrodlo%ChiLambda);
         if(allocated(zrodlo%ChiMod))     deallocate(zrodlo%ChiMod);
@@ -144,6 +146,7 @@ contains
 
         allocate(zrodlo%polozenia (pN  ,2) );
         allocate(zrodlo%Uvec      (pN  ) );
+        allocate(zrodlo%SpinUVec  (pN ,-1:1 ) );
         allocate(zrodlo%Ey        (pN  ) );
         allocate(zrodlo%ChiMod    (2*pN,lM+lEvanMods,-1:1));   ! 2 * pN bo spinor
         allocate(zrodlo%ChiModUp  (pN  ,lM+lEvanMods,-1:1));   ! 1 * pN bo up
@@ -173,6 +176,7 @@ contains
         zrodlo%ck         = 0
         zrodlo%dk         = 0
         zrodlo%Uvec       = 0
+        zrodlo%SpinUVec   = 0
         zrodlo%Sij        = 0
         zrodlo%Aij        = 0
         zrodlo%Sigma      = 0
@@ -290,13 +294,13 @@ contains
         no_modow = zrodlo%liczba_modow
         ! spin up
         do i = 1 , zrodlo%N
-        if(bSaveE)           write(4193,"(500f20.8)"),zrodlo%polozenia(i,:)*atomic_DX,zrodlo%Uvec(i),abs(zrodlo%ChiModUp(i,:,+1))**2,abs(zrodlo%ChiModUp(i,:,-1))**2
-        if(.not. bSaveE)     write(4193,"(500f20.8)"),zrodlo%polozenia(i,:)*atomic_DX,zrodlo%Uvec(i),abs(zrodlo%ChiModUp(i,1:no_modow,+1))**2,abs(zrodlo%ChiModUp(i,1:no_modow,-1))**2
+        if(bSaveE)           write(4193,"(500f20.8)"),zrodlo%polozenia(i,:)*atomic_DX,zrodlo%Uvec(i),zrodlo%SpinUVec(i,1),zrodlo%SpinUVec(i,-1),abs(zrodlo%ChiModUp(i,:,+1))**2,abs(zrodlo%ChiModUp(i,:,-1))**2
+        if(.not. bSaveE)     write(4193,"(500f20.8)"),zrodlo%polozenia(i,:)*atomic_DX,zrodlo%Uvec(i),zrodlo%SpinUVec(i,1),zrodlo%SpinUVec(i,-1),abs(zrodlo%ChiModUp(i,1:no_modow,+1))**2,abs(zrodlo%ChiModUp(i,1:no_modow,-1))**2
         enddo
         ! spin down
         do i = 1 , zrodlo%N
-        if(bSaveE)           write(4194,"(500f20.8)"),zrodlo%polozenia(i,:)*atomic_DX,zrodlo%Uvec(i),abs(zrodlo%ChiModDown(i,:,+1))**2,abs(zrodlo%ChiModDown(i,:,-1))**2
-        if(.not. bSaveE)     write(4194,"(500f20.8)"),zrodlo%polozenia(i,:)*atomic_DX,zrodlo%Uvec(i),abs(zrodlo%ChiModDown(i,1:no_modow,+1))**2,abs(zrodlo%ChiModDown(i,1:no_modow,-1))**2
+        if(bSaveE)           write(4194,"(500f20.8)"),zrodlo%polozenia(i,:)*atomic_DX,zrodlo%Uvec(i),zrodlo%SpinUVec(i,1),zrodlo%SpinUVec(i,-1),abs(zrodlo%ChiModDown(i,:,+1))**2,abs(zrodlo%ChiModDown(i,:,-1))**2
+        if(.not. bSaveE)     write(4194,"(500f20.8)"),zrodlo%polozenia(i,:)*atomic_DX,zrodlo%Uvec(i),zrodlo%SpinUVec(i,1),zrodlo%SpinUVec(i,-1),abs(zrodlo%ChiModDown(i,1:no_modow,+1))**2,abs(zrodlo%ChiModDown(i,1:no_modow,-1))**2
         enddo
 
         close(4193)
@@ -315,10 +319,21 @@ contains
         class(cspinzrodlo)   ::  zrodlo
         double precision     :: pdx,pEf,pBz,pkmin,pkmax,pdk,pEmax
         character(*)         :: nazwa_pliku
+        integer :: i
         print*,"Spinzrodlo: Zapisywanie relacji dyspresji do pliku:",nazwa_pliku
+
+        if(allocated(SUVEC)) deallocate(SUVEC)
+        allocate(SUVEC(zrodlo%N,-1:1))
+        do i = 1 , zrodlo%N
+            SUVEC(i,+1) = SUTOTAL(zrodlo%polozenia(i,1),zrodlo%polozenia(i,2),+1) ! w jednostkach donorowych
+            SUVEC(i,-1) = SUTOTAL(zrodlo%polozenia(i,1),zrodlo%polozenia(i,2),-1) ! w jednostkach donorowych
+        enddo
+
+
         call spinmodpop_inicjalizacja(atomic_DX,zrodlo%N,atomic_Ef,atomic_Bz,zrodlo%Uvec)
         call spinmodpop_relacja_dyspersji(pkmin,pkmax,pdk,pEmax,nazwa_pliku)
         call spinmodpop_zwalnienie_pamieci()
+        deallocate(SUVEC)
 
     end subroutine spinzrodlo_relacja_dyspersji
 
@@ -367,6 +382,7 @@ contains
                 SUVEC(i,-1) = SUTOTAL(pX1,pY1 + i - 1,-1) ! w jednostkach donorowych
             enddo
 
+
             call spinmodpop_calc_modes_from_wfm(atomic_DX,N,atomic_Ef,atomic_Bz,pUVEC,.true.)
         else ! dla zrodel gora dol
             do i = 1 , N
@@ -387,6 +403,7 @@ contains
         call zrodlo%spinzrodlo_alokuj_pamiec(N,lModow,lModowEvan)
 
         zrodlo%Uvec = pUVEC ! w jednostkach atomowych
+
 
         ! pole elekrtyczne jest trzymane w jednostkach donorowych
         do i = 2 , N-1
@@ -431,6 +448,12 @@ contains
             zrodlo%r1             = (/pX1,pY1/)*DX
             zrodlo%r2             = (/pX1,pYN/)*DX
             zrodlo%hny            = (pYN + pY1)/2.0*DX
+
+            do i = 1 , N
+                zrodlo%SpinUVec(i,:)  = SUTOTAL(zrodlo%polozenia(i,1),zrodlo%polozenia(i,2),:)
+            enddo
+
+
         else ! dla zrodel gora dol
             zrodlo%polozenia(:,2) = pX1
             do i = 1 , N

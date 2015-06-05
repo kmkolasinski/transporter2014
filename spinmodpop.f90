@@ -67,7 +67,7 @@ subroutine spinmodpop_inicjalizacja(pDx,pN,pEf,pB,pUvec)
     DX    = pDX*L2LR
     N     = pN-2
     Ef    = pEf/Rd/1000 ! bo Ef w meV
-    LWMAX = 50*N*2
+    LWMAX = 100*N*2
     t0    = 0.5/DX/DX
     BZ    = BtoDonorB(pB)
     BX    = BtoDonorB(atomic_Bx)
@@ -124,10 +124,10 @@ subroutine spinmodpop_inicjalizacja(pDx,pN,pEf,pB,pUvec)
     LWORK  = -1
     LRWORK = -1
     LIWORK = -1
-
+!
     ABSTOL = -1.0
-    VL     =  0.0
-    VU     =  2*Ef
+    VL     = -2*Ef
+    VU     = +2*Ef
 
     call spinmodpop_utworz_hamiltonian((0.0D0,0.0D0))
 
@@ -172,7 +172,7 @@ subroutine spinmodpop_utworz_hamiltonian(pk)
         Cx  = exp(II*DX*DX*BZ*(i-hNY))
         Dy  = exp(II*Ey(i)*so_loc*DX)
 
-        Hamiltonian(GINDEX(i,1),GINDEX(i,1)) = UVEC(i) + 4*t0 + 0.5 * G_LAN * M_EFF * BZ - t0*Kmx*Cx*conjg(Dy) - t0*Kx*conjg(Cx)*Dy
+        Hamiltonian(GINDEX(i,1),GINDEX(i,1)) = UVEC(i) + SUVEC(i,+1) + 4*t0 + 0.5 * G_LAN * M_EFF * BZ - t0*Kmx*Cx*conjg(Dy) - t0*Kx*conjg(Cx)*Dy
         Hamiltonian(GINDEX(i,1),GINDEX(i,2)) = tc0*Kx*conjg(Cx) - tc0*Kmx*Cx + 0.5 * G_LAN * M_EFF * (Bx  - II*By)
 
         if ( i > 1 ) then
@@ -185,7 +185,7 @@ subroutine spinmodpop_utworz_hamiltonian(pk)
         endif
 
         ! spin down
-        Hamiltonian(GINDEX(i,2),GINDEX(i,2)) = UVEC(i) + 4*t0 - 0.5 * G_LAN * M_EFF * BZ - t0*Kmx*Cx*(Dy) - t0*Kx*conjg(Cx)*conjg(Dy)
+        Hamiltonian(GINDEX(i,2),GINDEX(i,2)) = UVEC(i) + SUVEC(i,+1) + 4*t0 - 0.5 * G_LAN * M_EFF * BZ - t0*Kmx*Cx*(Dy) - t0*Kx*conjg(Cx)*conjg(Dy)
         Hamiltonian(GINDEX(i,2),GINDEX(i,1)) = -tc0*Kx*conjg(Cx) + tc0*Kmx*Cx + 0.5 * G_LAN * M_EFF * (Bx  + II*By)
 
         if ( i > 1 ) then
@@ -199,6 +199,10 @@ subroutine spinmodpop_utworz_hamiltonian(pk)
 !        write(222,"(i,A,10f16.6)"),i,"up=", Kmx*Cx*conjg(Dy) + Kx*conjg(Cx)*Dy - (Kmx*Cx*(Dy) + Kx*conjg(Cx)*conjg(Dy)) , Kmx*conjg(Dy) + Kx*Dy , Kmx*(Dy) + Kx*conjg(Dy)
 
     enddo
+
+
+
+
 !    Kmx = 0
 !    do i = 1 , 2 * N
 !    do j = i , 2 * N
@@ -221,6 +225,10 @@ subroutine spinmodpop_relacja_dyspersji(pkmin,pkmax,pdk,pEmax,nazwa_pliku)
     doubleprecision :: skank, YA, YB, polaryzacje(1000,3) , energie(1000)
     integer :: i, max_mods
     complex*16 , dimension(:) , allocatable :: XYup , XYdwn , Zup , Zdwn
+
+
+
+
     open(unit = 12321, file= nazwa_pliku )
     open(unit = 12322, file= nazwa_pliku(1:len(nazwa_pliku)-4)//"_polar_z.txt")
     open(unit = 12323, file= nazwa_pliku(1:len(nazwa_pliku)-4)//"_polar_x.txt")
@@ -255,7 +263,7 @@ subroutine spinmodpop_relacja_dyspersji(pkmin,pkmax,pdk,pEmax,nazwa_pliku)
         call spinmodpop_utworz_hamiltonian(kvec)
         ABSTOL = -1.0
         !     Set VL, VU to compute eigenvalues in half-open (VL,VU] interval
-        VL = -Emax
+        VL = -2*Emax
         VU = Emax
         !
         !     Solve eigenproblem.
@@ -264,7 +272,7 @@ subroutine spinmodpop_relacja_dyspersji(pkmin,pkmax,pdk,pEmax,nazwa_pliku)
         CALL ZHEEVR( "V", 'Values', 'Lower', 2*N, Hamiltonian, 2*N, VL, VU, IL,&
         &             IU, ABSTOL, M, MODPOP_VALS, Z, 2*N, ISUPPZ, WORK, LWORK, RWORK,&
         &             LRWORK, IWORK, LIWORK, INFO )
-
+!
         polaryzacje = -100
         energie     = 0
         do i = 1 , M
@@ -298,6 +306,9 @@ subroutine spinmodpop_relacja_dyspersji(pkmin,pkmax,pdk,pEmax,nazwa_pliku)
         write(12324,"(1000e20.10)"),skank*L2LR,atomic_Ef,M+0.0,polaryzacje(1:max_mods,3)
 
     enddo
+
+    if(allocated(GINDEX))      print*,GINDEX
+
     close(12321)
     close(12322)
     close(12323)
@@ -315,9 +326,17 @@ subroutine spinmodpop_zwalnienie_pamieci()
 
     if(TRANS_DEBUG == .true. ) print*,"    SPINMODPOP:Zwalnianie pamieci."
     if(allocated(UVEC))        deallocate(Uvec)
+
+
+
     if(allocated(Ey))          deallocate(Ey)
-    if(allocated(GINDEX))      deallocate(GINDEX)
+
+
+
     if(allocated(Hamiltonian)) deallocate(Hamiltonian)
+
+
+
 
     if(allocated(ISUPPZ))deallocate(ISUPPZ)
     if(allocated(IWORK ))deallocate(IWORK )
@@ -334,6 +353,11 @@ subroutine spinmodpop_zwalnienie_pamieci()
     if(allocated(ChiMod ))    deallocate(ChiMod)
     if(allocated(ChiKvec))    deallocate(ChiKvec)
     if(allocated(ChiLambda))  deallocate(ChiLambda)
+
+    if(allocated(GINDEX))      print*,GINDEX
+    if(allocated(GINDEX))      deallocate(GINDEX)
+    if(TRANS_DEBUG == .true. ) print*,"    SPINMODPOP:Zwalnianie pamieci zakonczone."
+
 
 end subroutine spinmodpop_zwalnienie_pamieci
 
@@ -368,6 +392,7 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
     INTEGER                                      :: LDVL, LDVR , LWMAX , LWORK , INFO
     COMPLEX*16 , dimension(:) ,     allocatable  :: ALPHA , BETA , WORK
     double precision, dimension(:), allocatable  :: RWORK
+    double precision, dimension(:,:), allocatable  :: spinuvec
     COMPLEX*16 , dimension(:) ,     allocatable  :: tmp_vec , tmp_vec2
     COMPLEX*16 , dimension(:,:)   , allocatable  :: Z
     COMPLEX*16      :: DUMMY(1,1),lambda , YcY
@@ -391,6 +416,7 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
     ! alokacja tablic
 
     if(allocated(Uvec))       deallocate(Uvec)
+    if(allocated(spinuvec))       deallocate(spinuvec)
     if(allocated(Ey))  deallocate(Ey)
     if(allocated(GINDEX))  deallocate(GINDEX)
     if(allocated(Hamiltonian))  deallocate(Hamiltonian)
@@ -411,6 +437,7 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
 
 
     allocate(Uvec(N))
+    allocate(spinuvec(N,-1:1))
     allocate(Ey(N))
     allocate(GINDEX(N,2))
     allocate(Hamiltonian(2*N,2*N))
@@ -438,6 +465,7 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
 
     do i = 1 , N
         Uvec(i)        = pUVEC(i+1)/Rd/1000 ! bo Ef w meV
+        spinuvec(i,:)  = SUVEC(i+1,:) ! bo Ef w donorowych
     enddo
 
 
@@ -489,10 +517,11 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
         enddo
     endif
 
+
 ! Przygotowanei podmacierzy (E-H) i macierzy od raszby
     do i = 1 , N
-        Mham(i,i,1)   = UVEC(i) + SUVEC(i,+1) + 4*t0 + 0.5 * G_LAN * M_EFF * BZ - Ef
-        Mham(i,i,2)   = UVEC(i) + SUVEC(i,-1) + 4*t0 - 0.5 * G_LAN * M_EFF * BZ - Ef
+        Mham(i,i,1)   = UVEC(i) + spinuvec(i,+1) + 4*t0 + 0.5 * G_LAN * M_EFF * BZ - Ef
+        Mham(i,i,2)   = UVEC(i) + spinuvec(i,-1) + 4*t0 - 0.5 * G_LAN * M_EFF * BZ - Ef
         if(i < N) Mham(i,i+1,:) = -t0
         if(i > 1) Mham(i,i-1,:) = -t0
 
@@ -793,6 +822,7 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
 
 
     deallocate(Uvec       )
+    deallocate(spinuvec   )
     deallocate(Ey         )
     deallocate(GINDEX     )
     deallocate(Hamiltonian)

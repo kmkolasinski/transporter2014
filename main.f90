@@ -21,7 +21,7 @@ program transporter
  double precision,dimension(:,:), allocatable  :: TR_MAT
  integer :: i,j, sum_mod
  double precision :: width , G21(-1:1) , G23(-1:1) , sigmax , sigmay , kvec , poleB
-
+ double precision :: fread(4)
  character(len=16) :: file_name
 
 ! -----------------------------------------------
@@ -89,6 +89,7 @@ UTOTAL = 0
 
 call spinsystem_inicjalizacja(NX,NY,liczba_zrodel);
 
+
 UTOTAL = 0
 do i = 1 , nx
 do j = 1 , ny
@@ -99,23 +100,63 @@ do j = 1 , ny
 
 enddo
 enddo
-call spinsystem_zapisz_do_pliku("pot1.txt",ZAPISZ_POTENCJAL)
+
+
+
 !UTOTAL = 0
-
-call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
-call utworz_system()
-
+SUTOTAL = 0
+open(unit=432,file="dft_uint.txt")
+do i = 1 , nx
+do j = 1 , ny
+    read(432,"(4e20.6)"),fread
+    !print*,fread
+    SUTOTAL(i,j,+1) = fread(3) / 1000.0 / Rd
+    SUTOTAL(i,j,-1) = fread(4) / 1000.0 / Rd
+enddo
+    read(432,"(A)")
+enddo
 call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
-call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
-call spinsystem_zapisz_do_pliku("flag.txt",ZAPISZ_FLAGI)
+
+atomic_Ef = 57.8624513068335
+
+!call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+!call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+!call utworz_system(nx)
+
+!call spinsystem_rozwiaz_problem(1,TR_MAT)
+!call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
+!
+call solve_trans_system()
+
+stop
+
+
+!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
+!call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
+!call spinsystem_zapisz_do_pliku("flag.txt",ZAPISZ_FLAGI)
 
 TRANS_EIGPROBLEM_PERIODIC_X = .true.
 call spindft_initialize()
 call spindft_solve_temp_annealing()
 
 
+atomic_Ef = DFT_FINDED_EF
 
+call solve_trans_system()
+
+!call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+!call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+!call spinsystem_rozwiaz_problem(1,TR_MAT)
+!call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
+!call spinsystem_zapisz_do_pliku("pot_dft.txt",ZAPISZ_POTENCJAL)
+open(unit = 222, file= "T.txt" )
+write(222,"(20e20.6)"),omega,atomic_Ef,atomic_Bz,sum(TR_MAT(2,:)),sum(TR_MAT(1,:)) !,G21(+1)-G21(-1),G21(+1),G21(-1)
+close(222)
+
+if(allocated(TR_MAT))deallocate(TR_MAT)
+
+
+stop
 
 atomic_Ef = DFT_FINDED_EF
 call zrodla(1)%spinzrodlo_ustaw(3,NY-3,5,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
@@ -226,12 +267,95 @@ if(allocated(TR_MAT))deallocate(TR_MAT)
 
 contains
 
+subroutine solve_trans_system()
 
-subroutine utworz_system()
+    doubleprecision, allocatable :: TRANS_SUTOTAL(:,:,:)
+    integer :: X_REAPEAT , i ,j , r , nnx
+    doubleprecision :: w_omega , ave_pot(-1:1)
+
+    X_REAPEAT = 1
+    nnx =nx+2*nx*X_REAPEAT
+    allocate(TRANS_SUTOTAL(nnx,ny,-1:1))
+    if(allocated(TR_MAT))deallocate(TR_MAT)
+
+    TRANS_SUTOTAL(:,:,1) = SUTOTAL(1,ny/2,1)
+    TRANS_SUTOTAL(:,:,-1) = SUTOTAL(1,ny/2,-1)
+
+    ! licze sredni potencjal na wejsciu
+    ave_pot = 0
+    j = 0
+    do i = ny/2  - 5 , ny/2 + 5
+        j = j + 1
+        ave_pot(+1) = ave_pot(+1) + SUTOTAL(1,i,+1)
+        ave_pot(-1) = ave_pot(-1) + SUTOTAL(1,i,-1)
+    enddo
+    ave_pot = ave_pot / j
+
+
+
+    do i = 1 , nnx
+        w_omega = (i-1.0)/(nx-1.0)
+        if( i > nnx - nx * X_REAPEAT) w_omega = -(i-nnx)/(nx-1.0)
+
+        w_omega = 2*(w_omega - 0.5)
+
+        if(w_omega > 1)  w_omega = 1.0
+        if(w_omega < 0)  w_omega = 0.0
+
+        w_omega = 1.0
+
+        TRANS_SUTOTAL(i,:,+1) = w_omega*SUTOTAL(1,:,+1) + (1-w_omega) * ave_pot(+1)
+        TRANS_SUTOTAL(i,:,-1) = w_omega*SUTOTAL(1,:,-1) + (1-w_omega) * ave_pot(-1)
+    enddo
+
+    do i = 1 , nx
+    do j = 1 , ny
+        TRANS_SUTOTAL(i+(X_REAPEAT)*nx,j,:) = SUTOTAL(i,j,:)
+    enddo
+    enddo
+
+    call spinsystem_zwalnienie_pamieci()
+    call spinsystem_inicjalizacja(nnx,NY,liczba_zrodel);
+
+
+    UTOTAL  = 0
+    SUTOTAL = TRANS_SUTOTAL
+    do i = 1 , nnx
+    do j = 1 , ny
+        x = i * dx
+        y = j * dx
+        UTOTAL(i,j) = gauss_gate(omega,xpos + nx*atomic_DX*X_REAPEAT/2,0.0D0,sigmax,sigmay,x,y) + &
+                      gauss_gate(omega,xpos + nx*atomic_DX*X_REAPEAT/2,ny*dx,sigmax,sigmay,x,y)
+    enddo
+    enddo
+
+
+    call spinsystem_zapisz_do_pliku("pot_repeat2.txt",ZAPISZ_POTENCJAL)
+
+    call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1  ,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+    call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nnx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+
+
+    call utworz_system(nnx)
+
+    call spinsystem_rozwiaz_problem(1,TR_MAT)
+    call spinsystem_zapisz_do_pliku("phi_repeat2.txt",ZAPISZ_PHI)
+
+    !call zrodla(1)%spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.01D0,atomic_Ef*3,"rel.txt")
+!    call zrodla(1)%spinzrodlo_zapisz_mody("mup.txt","mdwn.txt")
+
+    deallocate(TRANS_SUTOTAL)
+    call spinsystem_zwalnienie_pamieci()
+
+end subroutine solve_trans_system
+
+
+
+subroutine utworz_system(nx)
+    integer :: nx
     integer :: i,j , wjazd , promien
     ! prosty test
-    wjazd  = nx/4+20
-    GFLAGS = B_EMPTY
+
 
     wjazd  = nx/2+3
     GFLAGS = B_EMPTY

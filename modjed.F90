@@ -30,7 +30,7 @@ MODULE modjed
     double precision :: so_Fz
     double precision :: so_alpha3D
 
-    logical,parameter :: TRANS_DEBUG = .false.
+    logical,parameter :: TRANS_DEBUG = .true.
     logical           :: TRANS_EIGPROBLEM_PERIODIC_X = .false.
 
      ENUM,BIND(C)

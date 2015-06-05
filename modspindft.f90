@@ -36,6 +36,7 @@ module modspindft
 
     public :: spindft_initialize , spindft_free , spindft_solve , spindft_fix_ef
     public :: spindft_solve_temp_annealing
+    public :: spindft_zapisz_rho , spindft_wczytaj_rho_poczatkowe
     public :: DFT_TEMP ,  DFT_TEMP_MIN  , DFT_MAX_ITER , DFT_CURR_RESIDUUM , DFT_FINDED_EF ,DFT_FIX_EF
     contains
 
@@ -73,7 +74,7 @@ module modspindft
         call getIntValue   ("DFT","improve_feast",DFT_IMPROVE_FEAST_STEPS)
         print*,"Problem uzbiezniany na podstawie liczby donorow: DFT_FIX_EF = false"
 
-        DFT_DENS_NO_MEM = DFT_MAX_ITER
+        DFT_DENS_NO_MEM = 2!DFT_MAX_ITER
 
         Ef = DFT_ATOMIC_EF/1000.0/Rd
 
@@ -203,6 +204,7 @@ module modspindft
         integer :: itemp
         doubleprecision :: tomega
         GLOBAL_TEMP_ITER = 0
+        open(unit = 8998, file= "dft_iter.txt" )
         do itemp = 1 , DFT_TEMP_NO_STEPS
             tomega = (itemp-1.0)/(DFT_TEMP_NO_STEPS-1.0)
 
@@ -281,8 +283,10 @@ module modspindft
             enddo
             enddo
 
-            write(333,"(20f20.6)"),GLOBAL_TEMP_ITER+0.0D0,DFT_CURR_TEMP,GLOBAL_ITER+0.0,Ef*1000*Rd,DFT_CURR_RESIDUUM
+            write(8998,"(20f20.6)"),GLOBAL_TEMP_ITER+0.0D0,DFT_CURR_TEMP,GLOBAL_ITER+0.0,Ef*1000*Rd,DFT_CURR_RESIDUUM
 
+
+            open(unit=222,file="dft_rho.txt")
             do i = 1 , nx
             do j = 1 , ny
                 if(DFTINDEX(i,j) > 0 ) &
@@ -292,28 +296,18 @@ module modspindft
             enddo
             close(222)
 
+            open(unit=555,file="dft_uint.txt")
             do i = 1 , nx
             do j = 1 , ny
-                if(DFTINDEX(i,j) > 0 ) &
-                write(555,"(5f20.6)"),i*atomic_DX,j*atomic_DX,SUTOTAL(i,j,1)*Rd*1000.0,SUTOTAL(i,j,-1)*Rd*1000.0
+                if(DFTINDEX(i,j) > 0 ) then
+                    write(555,"(5f20.6)"),i*atomic_DX,j*atomic_DX,SUTOTAL(i,j,1)*Rd*1000.0,SUTOTAL(i,j,-1)*Rd*1000.0
+                else
+                    write(555,"(5f20.6)"),i*atomic_DX,j*atomic_DX,0.0D0,0.0D0
+                endif
             enddo
                 write(555,*),""
             enddo
             close(555)
-
-
-!            m = 2
-!            do i = 1-m*NX , (m+1)*NX
-!            do j = 1 , NY
-!                 if(DFTINDEX(mod(abs(1-NX*m-i),NX)+1,j) > 0) then
-!                    write(666,*),i*atomic_DX,j*atomic_DX,new_rho(DFTINDEX(mod(abs(1-NX*m-i),NX)+1,j),1)
-!                 endif
-!            enddo
-!                 write(666,*),""
-!            enddo
-!            close(666)
-!            stop
-
 
             if(  DFT_CURR_RESIDUUM < DFT_RESIDUUM  ) then
                 print*,"Finished"
@@ -346,6 +340,19 @@ module modspindft
         if(allocated(rho_tot))     deallocate(rho_tot)
         if(allocated(xc_res))      deallocate(xc_res)
         if(allocated(VSQRTL))      deallocate(VSQRTL)
+
+
+        if(allocated(rho_pp)) deallocate(rho_pp)
+        if(allocated(rho_p)) deallocate(rho_p)
+        if(allocated(rho_or_p)) deallocate(rho_or_p)
+        if(allocated(rhoU_or)) deallocate(rhoU_or)
+        if(allocated(dR_u_p)) deallocate(dR_u_p)
+        if(allocated(v_n)) deallocate(v_n)
+        if(allocated(u_n)) deallocate(u_n)
+        if(allocated(u_p)) deallocate(u_p)
+        if(allocated(v_p)) deallocate(v_p)
+
+
         ! Zwalnianie pamieci
         call spinsystem_widmo(0.0D0,DFT_ATOMIC_EF,DFT_NO_STATES,2,8)
     end subroutine spindft_free
@@ -471,6 +478,7 @@ module modspindft
 
     double precision :: fermi,Na,Efa,Efb,dens_ele,ndonor
     integer          :: val , s , i , j
+    logical          :: fixTest
     double precision :: polaryzacje(-1:1)
 
 
@@ -483,7 +491,9 @@ module modspindft
 
     ! jesli energia fermiego jest ustalona to wtedy nie liczymy gestosci
     ! z zachowania ladunku
-    if(DFT_FIX_EF == .false. .or. GLOBAL_ITER < 5) then
+    fixTest = GLOBAL_TEMP_ITER < 10
+
+    if(DFT_FIX_EF == .false. .or. fixTest) then
         Efa = -100
         Efb =  100.0
         Na  = (calcfermiSum(Efa)-ndonor)
@@ -643,95 +653,100 @@ module modspindft
     end function calcFermiSum
 
 
-    subroutine mix_densities(rho_or,rho)
-        doubleprecision, allocatable :: rho_or(:,:),rho(:,:)
-        integer :: mem , s , i , it_u
-        doubleprecision ::  calka_dRU , calka_dRD
-
-! ! 	it=0 - w. poczatkowy, nie ma mieszania
-! ! 	it=1 - rho_1 = rho_0 normalnie zmieszane z rho_or_1
-! ! 	it=2 - rho_2 = rho_1 normalnie zmieszane z rho_or_2
-! ! ! 	  mieszanie:
-	    if(GLOBAL_ITER .ne. 1 ) then
-        if(GLOBAL_ITER  <= 3  ) then
-            write(*,*) GLOBAL_ITER," jeszcze zwykle mieszanie"
-            rho  =rho_or*DFT_W_PARAM + rho_p*(1.D0-DFT_W_PARAM)
-        else
-            write(*,*) GLOBAL_ITER," mieszanie Broydena"
-            it_u = GLOBAL_ITER - 3
-
-            calka_dRU=0.D0; calka_dRD=0.D0
-            dR_u_p = rho_or - rho_p - rho_or_p + rho_pp
-
-            do i=1,DFT_TRANSMAX
-              calka_dRU=calka_dRU+abs(dR_u_p(i,+1))**2
-              calka_dRD=calka_dRD+abs(dR_u_p(i,-1))**2
-            enddo
-
-            call multiply_Jac(it_u-1,u_p,v_p,dR_u_p,u_n)
-            u_p(:,:,it_u)=  rho_p - rho_pp - u_n
-
-            v_p(:,+1,it_u)=dR_u_p(:,+1)/calka_dRU
-            v_p(:,-1,it_u)=dR_u_p(:,-1)/calka_dRD
-
-            u_n = rho_or - rho_p
-            call multiply_Jac(it_u,u_p,v_p,u_n,v_n)
-            rho= -v_n + rho_p
-
-!! ! ! 		zaalokowac tablice do it_u+1
-!		call expand_uv(it_u,uU_p,uD_p,vU_p,vD_p)
-	      endif
-	    else
-          write(*,*) GLOBAL_ITER," przepisywanie gestosci"
-          rho = rho_or
-	    endif
-! ! 	  przepisanie tablic:
-	    rho_pp     =rho_p
-	    rho_p      =rho
-	    rho_or_p   =rho_or
-
-        DFT_CURR_RESIDUUM = sum(abs(rho_or-rho))*dx*dx
-
-!        print*,"Residuum:"
-!        ! przesuwanie tablic
-!        do mem = DFT_DENS_NO_MEM , 2 , -1
-!            rho_mem_in(:,:,mem) = rho_mem_in(:,:,mem-1)
-!            rho_mem  (:,:,mem)  = rho_mem  (:,:,mem-1)
-!            broyden_R(:,:,mem)  = broyden_R(:,:,mem-1)
-!            broyden_U(:,:,mem)  = broyden_U(:,:,mem-1)
-!            broyden_V(:,:,mem)  = broyden_V(:,:,mem-1)
-!            print*,"Past:",mem," residuum:",sum(abs(broyden_V(:,1,mem)))*dx*dx
-!        enddo
+!    subroutine mix_densities(rho_or,rho)
+!        doubleprecision, allocatable :: rho_or(:,:),rho(:,:)
+!        integer :: mem , s , i , it_u
+!        doubleprecision ::  calka_dRU , calka_dRD
 !
-!        ! w tablicy
-!        broyden_R(:,:,1)  = in_rho - rho_mem(:,:,1) ! bierzemy roznice Fx - x
-!
-!
-!
-!
-!        DFT_CURR_RESIDUUM = sum(abs(broyden_R(:,1,1)))*dx*dx
-!        print*,"Past:",1," residuum:",DFT_CURR_RESIDUUM
-!        print*,""
-!
-!        if(GLOBAL_ITER == 1) then
-!            out_rho = in_rho
-!        else  if(GLOBAL_ITER == 2) then! proste mieszanie
-!            out_rho = rho_mem(:,:,1) + DFT_W_PARAM * broyden_R(:,:,1)
+!! ! 	it=0 - w. poczatkowy, nie ma mieszania
+!! ! 	it=1 - rho_1 = rho_0 normalnie zmieszane z rho_or_1
+!! ! 	it=2 - rho_2 = rho_1 normalnie zmieszane z rho_or_2
+!! ! ! 	  mieszanie:
+!	    if(GLOBAL_ITER .ne. 1 ) then
+!        if(GLOBAL_ITER  <= 3  ) then
+!            write(*,*) GLOBAL_ITER," jeszcze zwykle mieszanie"
+!            rho  =rho_or*DFT_W_PARAM + rho_p*(1.D0-DFT_W_PARAM)
 !        else
-!            ! mieszanie na podstawie: http://www.ondrejcertik.com/media/cookbook/master.pdf
-!            ! wzor (3.28)
-!!            do i = 1 , DFT_TRANSMAX
-!!                do s = 1 , -1 , -2
-!!                if( broyden_R(i,s,1)*broyden_R(i,s,2) > 0 ) then
-!!                    diagonal_Jm(i,s) = diagonal_Jm(i,s) + DFT_W_PARAM
-!!                    if(diagonal_Jm(i,s) > DFT_MAX_W_PARAM) diagonal_Jm(i,s) = DFT_MAX_W_PARAM
-!!                else
-!!                    diagonal_Jm(i,s) =  DFT_W_PARAM
-!!                endif
-!!                enddo ! of s
-!!            enddo
-!!            out_rho = rho_mem(:,:,1) + diagonal_Jm * broyden_R(:,:,1)
+!            write(*,*) GLOBAL_ITER," mieszanie Broydena"
+!            it_u = GLOBAL_ITER - 2
 !
+!            calka_dRU=0.D0; calka_dRD=0.D0
+!            dR_u_p = rho_or - rho_p - rho_or_p + rho_pp
+!
+!            do i=1,DFT_TRANSMAX
+!              calka_dRU=calka_dRU+abs(dR_u_p(i,+1))**2
+!              calka_dRD=calka_dRD+abs(dR_u_p(i,-1))**2
+!            enddo
+!
+!            call multiply_Jac(it_u-1,u_p,v_p,dR_u_p,u_n)
+!            u_p(:,:,it_u)=  rho_p - rho_pp - u_n
+!
+!            v_p(:,+1,it_u)=dR_u_p(:,+1)/calka_dRU
+!            v_p(:,-1,it_u)=dR_u_p(:,-1)/calka_dRD
+!
+!            u_n = rho_or - rho_p
+!            call multiply_Jac(it_u,u_p,v_p,u_n,v_n)
+!            rho= -v_n + rho_p
+!
+!!! ! ! 		zaalokowac tablice do it_u+1
+!!		call expand_uv(it_u,uU_p,uD_p,vU_p,vD_p)
+!	      endif
+!	    else
+!          write(*,*) GLOBAL_ITER," przepisywanie gestosci"
+!          rho = rho_or
+!	    endif
+!! ! 	  przepisanie tablic:
+!	    rho_pp     =rho_p
+!	    rho_p      =rho
+!	    rho_or_p   =rho_or
+!
+!        DFT_CURR_RESIDUUM = sum(abs(rho_or-rho))*dx*dx
+
+
+    subroutine mix_densities(in_rho,out_rho)
+        doubleprecision, allocatable :: in_rho(:,:),out_rho(:,:)
+        integer :: mem , s , i , it_u
+
+        print*,"Residuum:"
+        ! przesuwanie tablic
+        do mem = DFT_DENS_NO_MEM , 2 , -1
+            rho_mem_in(:,:,mem) = rho_mem_in(:,:,mem-1)
+            rho_mem  (:,:,mem)  = rho_mem  (:,:,mem-1)
+            broyden_R(:,:,mem)  = broyden_R(:,:,mem-1)
+            broyden_U(:,:,mem)  = broyden_U(:,:,mem-1)
+            broyden_V(:,:,mem)  = broyden_V(:,:,mem-1)
+            print*,"Past:",mem," residuum:",sum(abs(broyden_V(:,1,mem)))*dx*dx
+        enddo
+
+        ! w tablicy
+        broyden_R(:,:,1)  = in_rho - rho_mem(:,:,1) ! bierzemy roznice Fx - x
+
+
+
+
+        DFT_CURR_RESIDUUM = sum(abs(broyden_R(:,1,1)))*dx*dx
+        print*,"Past:",1," residuum:",DFT_CURR_RESIDUUM
+        print*,""
+
+        if(GLOBAL_ITER == 1) then
+            out_rho = in_rho
+        else  if(GLOBAL_ITER == 2) then! proste mieszanie
+            out_rho = rho_mem(:,:,1) + DFT_W_PARAM * broyden_R(:,:,1)
+        else
+            ! mieszanie na podstawie: http://www.ondrejcertik.com/media/cookbook/master.pdf
+            ! wzor (3.28)
+            do i = 1 , DFT_TRANSMAX
+                do s = 1 , -1 , -2
+                if( broyden_R(i,s,1)*broyden_R(i,s,2) > 0 ) then
+                    diagonal_Jm(i,s) = diagonal_Jm(i,s) + DFT_W_PARAM
+                    if(diagonal_Jm(i,s) > DFT_MAX_W_PARAM) diagonal_Jm(i,s) = DFT_MAX_W_PARAM
+                else
+                    diagonal_Jm(i,s) =  DFT_W_PARAM
+                endif
+                enddo ! of s
+            enddo
+            out_rho = rho_mem(:,:,1) + diagonal_Jm * broyden_R(:,:,1)
+
 !            do s = 1 , -1 , -2
 !                broyden_U(:,s,1) = (rho_mem(:,s,2) - rho_mem(:,s,3)) + DFT_W_PARAM * ( broyden_R(:,s,1) - broyden_R(:,s,2) )
 !                do mem = 2 , DFT_DENS_NO_MEM
@@ -746,11 +761,11 @@ module modspindft
 !                    out_rho(:,s) = out_rho(:,s) - broyden_U(:,s,mem) * sum(broyden_V(:,s,mem)* ( broyden_R(:,s,1) ) )
 !                enddo
 !            enddo
-!
-!
-!        endif
-!
-!        rho_mem(:,:,1)   = out_rho(:,:) ! aktualizujemy gestosc na pierwszym miejscu
+
+
+        endif
+
+        rho_mem(:,:,1)   = out_rho(:,:) ! aktualizujemy gestosc na pierwszym miejscu
 
     end subroutine mix_densities
 
@@ -775,5 +790,32 @@ module modspindft
 	  enddo
 
 	end subroutine multiply_Jac
+
+
+    subroutine spindft_zapisz_rho()
+        integer :: i
+        open(unit = 432, file= "r.dat" )
+        do i = 1 , DFT_TRANSMAX
+            write(432,"(2f20.6)"),new_rho(i,+1),new_rho(i,-1)
+        enddo
+        close(432)
+    end subroutine spindft_zapisz_rho
+
+    subroutine spindft_wczytaj_rho_poczatkowe()
+        integer :: i
+        doubleprecision :: rvals(2)
+        open(unit = 432, file= "r.dat" )
+        do i = 1 , DFT_TRANSMAX
+            read(432,"(2f20.6)"),rvals
+            new_rho(i,+1) = rvals(1)
+            new_rho(i,-1) = rvals(2)
+        enddo
+        close(432)
+        rho_tot =   new_rho(i,+1) + new_rho(i,-1)
+        call spindft_ks_iteration(0)
+
+
+    end subroutine spindft_wczytaj_rho_poczatkowe
+
 
 endmodule

@@ -329,9 +329,10 @@ module modspinsystem
         enddo
 
         ! nadawanie indeksow
-        GINDEX = 0
-        iter   = 1
-        do iii = -1 , 1 , 2
+
+        GINDEX  = 0
+        iter    = 1
+        do iii  = -1 , 1 , 2
 
         do i = 1 , nx
         do j = 1 , ny
@@ -346,7 +347,7 @@ module modspinsystem
         enddo
 
         enddo ! end of iii - numerowanie po spinach
-        SUTOTAL = 0
+
 
     end subroutine spinsystem_inicjalizacja_ukladu
 
