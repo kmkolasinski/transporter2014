@@ -101,34 +101,34 @@ do j = 1 , ny
 enddo
 enddo
 
-
+!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
 
 !UTOTAL = 0
-SUTOTAL = 0
-open(unit=432,file="dft_uint.txt")
-do i = 1 , nx
-do j = 1 , ny
-    read(432,"(4e20.6)"),fread
-    !print*,fread
-    SUTOTAL(i,j,+1) = fread(3) / 1000.0 / Rd
-    SUTOTAL(i,j,-1) = fread(4) / 1000.0 / Rd
-enddo
-    read(432,"(A)")
-enddo
-call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
+!SUTOTAL = 0
+!open(unit=432,file="dft_uint.txt")
+!do i = 1 , nx
+!do j = 1 , ny
+!    read(432,"(4e20.6)"),fread
+!    !print*,fread
+!    SUTOTAL(i,j,+1) = fread(3) / 1000.0 / Rd
+!    SUTOTAL(i,j,-1) = fread(4) / 1000.0 / Rd
+!enddo
+!    read(432,"(A)")
+!enddo
+!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
+!
+!atomic_Ef = 57.8624513068335
 
-atomic_Ef = 57.8624513068335
-
-!call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-!call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
-!call utworz_system(nx)
+call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+call utworz_system(nx)
 
 !call spinsystem_rozwiaz_problem(1,TR_MAT)
 !call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
 !
-call solve_trans_system()
+!call solve_trans_system()
 
-stop
+!stop
 
 
 !call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
@@ -138,10 +138,7 @@ stop
 TRANS_EIGPROBLEM_PERIODIC_X = .true.
 call spindft_initialize()
 call spindft_solve_temp_annealing()
-
-
 atomic_Ef = DFT_FINDED_EF
-
 call solve_trans_system()
 
 !call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
@@ -158,42 +155,42 @@ if(allocated(TR_MAT))deallocate(TR_MAT)
 
 stop
 
-atomic_Ef = DFT_FINDED_EF
-call zrodla(1)%spinzrodlo_ustaw(3,NY-3,5,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-write(111,*),atomic_Ef,DFT_CURR_RESIDUUM,zrodla(1)%liczba_modow
-
-
-UTOTAL = 0
-do i = 1 , nx
-do j = 1 , ny
-    x = i * dx
-    y = j * dx
-    UTOTAL(i,j) = gauss_gate(omega,xpos,0.0D0,sigmax,sigmay,x,y) + &
-                  gauss_gate(omega,xpos,ny*dx,sigmax,sigmay,x,y)
-enddo
-enddo
-call spindft_free()
-call spindft_initialize()
-call spindft_fix_ef(atomic_Ef)
-call spindft_solve_temp_annealing()
-
-
-
-call spindft_free()
-atomic_Ef = DFT_FINDED_EF
-call zrodla(1)%spinzrodlo_ustaw(3,NY-3,5,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-write(111,*),atomic_Ef,DFT_CURR_RESIDUUM,zrodla(1)%liczba_modow
-!call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+!atomic_Ef = DFT_FINDED_EF
+!call zrodla(1)%spinzrodlo_ustaw(3,NY-3,5,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+!write(111,*),atomic_Ef,DFT_CURR_RESIDUUM,zrodla(1)%liczba_modow
 !
-!call spinsystem_rozwiaz_problem(1,TR_MAT)
-!call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
-call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
-!call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
-
-!call spinsystem_widmo(0.0D0,2*atomic_Ef,150,0,8)
-!call spinsystem_widmo(0.0D0,2*atomic_Ef,150,2,8)
-!call spinsystem_zapisz_widmo_do_pliku("stany",ZAPISZ_STANY_WLASNE)
-!call spinsystem_zapisz_widmo_do_pliku("widmo.txt",ZAPISZ_WIDMO_VRTCAL)
+!
+!UTOTAL = 0
+!do i = 1 , nx
+!do j = 1 , ny
+!    x = i * dx
+!    y = j * dx
+!    UTOTAL(i,j) = gauss_gate(omega,xpos,0.0D0,sigmax,sigmay,x,y) + &
+!                  gauss_gate(omega,xpos,ny*dx,sigmax,sigmay,x,y)
+!enddo
+!enddo
+!call spindft_free()
+!call spindft_initialize()
+!call spindft_fix_ef(atomic_Ef)
+!call spindft_solve_temp_annealing()
+!
+!
+!
+!call spindft_free()
+!atomic_Ef = DFT_FINDED_EF
+!call zrodla(1)%spinzrodlo_ustaw(3,NY-3,5,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+!write(111,*),atomic_Ef,DFT_CURR_RESIDUUM,zrodla(1)%liczba_modow
+!!call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+!!
+!!call spinsystem_rozwiaz_problem(1,TR_MAT)
+!!call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
+!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
+!!call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
+!
+!!call spinsystem_widmo(0.0D0,2*atomic_Ef,150,0,8)
+!!call spinsystem_widmo(0.0D0,2*atomic_Ef,150,2,8)
+!!call spinsystem_zapisz_widmo_do_pliku("stany",ZAPISZ_STANY_WLASNE)
+!!call spinsystem_zapisz_widmo_do_pliku("widmo.txt",ZAPISZ_WIDMO_VRTCAL)
 
 
 call spinsystem_zwalnienie_pamieci()
@@ -330,7 +327,7 @@ subroutine solve_trans_system()
     enddo
 
 
-    call spinsystem_zapisz_do_pliku("pot_repeat2.txt",ZAPISZ_POTENCJAL)
+    call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL,nx,nnx-nx)
 
     call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1  ,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
     call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nnx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
@@ -339,7 +336,7 @@ subroutine solve_trans_system()
     call utworz_system(nnx)
 
     call spinsystem_rozwiaz_problem(1,TR_MAT)
-    call spinsystem_zapisz_do_pliku("phi_repeat2.txt",ZAPISZ_PHI)
+    call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI,nx,nnx-nx)
 
     !call zrodla(1)%spinzrodlo_relacja_dyspersji(-0.5D0,0.5D0,0.01D0,atomic_Ef*3,"rel.txt")
 !    call zrodla(1)%spinzrodlo_zapisz_mody("mup.txt","mdwn.txt")
