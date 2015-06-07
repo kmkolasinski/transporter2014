@@ -129,6 +129,9 @@ module modspinsystem
         DUTOTAL= 0
         SUTOTAL= 0
         PHI    = 0
+        DEX    = 0
+        DEY    = 0
+        CURRENT = 0
         ! Tworzymy uklad...
         no_zrodel = pLiczbaZrodel
         allocate(zrodla(no_zrodel))
@@ -199,9 +202,15 @@ module modspinsystem
         if(allocated(PHI))      deallocate(PHI)
         if(allocated(DEX))      deallocate(DEX)
         if(allocated(DEY))      deallocate(DEY)
+
+
+
+
+
 !        if( allocated(WAVEFUNC) ) deallocate(WAVEFUNC)
-!        if(allocated(Widmo_Evals)) deallocate(Widmo_Evals)
-!        if(allocated(Widmo_Vecs)) deallocate(Widmo_Vecs)
+        if(allocated(Widmo_Evals)) deallocate(Widmo_Evals)
+        if(allocated(Widmo_Vecs))  deallocate(Widmo_Vecs)
+
         print*,"    Czyszczenie zrodel..."
         do i = 1 , no_zrodel
             call zrodla(i)%spinzrodlo_zwolnij_pamiec()
@@ -1505,15 +1514,31 @@ module modspinsystem
             obecny_etap = etap
         endif
 
+        print*,"Problem wlasny start: etap:",obecny_etap
 
         if(obecny_etap == 2) then
+            fpm  = 0
+            info = 0
+
+
+
             if(allocated(CMATA))    deallocate(CMATA)
             if(allocated(IDXA))     deallocate(IDXA)
             if(allocated(HBROWS))   deallocate(HBROWS)
             if(allocated(WINDEX))   deallocate(WINDEX)
-            if(allocated(EVectors)) deallocate(EVectors)
-            if(allocated(Evalues))  deallocate(Evalues)
-            if(allocated(Rerrors))  deallocate(Rerrors)
+
+            if(allocated(EVectors)) then
+                EVectors = 0
+                deallocate(EVectors)
+                endif
+            if(allocated(Evalues)) then
+                Evalues = 0
+                deallocate(Evalues)
+                endif
+            if(allocated(Rerrors)) then
+                Rerrors = 0
+                deallocate(Rerrors)
+                endif
             return
         endif
 
@@ -1595,6 +1620,23 @@ module modspinsystem
        endif
         DUTOTAL = UTOTAL/1000.0/Rd
 
+        ! pole elekrtyczne jest trzymane w jednostkach donorowych
+        do i = 1 , NX
+        do j = 2 , NY-1
+            DEY(i,j) = (DUTOTAL(i,j+1) - DUTOTAL(i,j-1))/2/DX
+        enddo
+        enddo
+        DEY(:,1)  = DEY(:,2)
+        DEY(:,NY) = DEY(:,NY-1)
+
+        do i = 2 , NX-1
+        do j = 1 , NY
+            DEX(i,j) = (DUTOTAL(i+1,j) - DUTOTAL(i-1,j))/2/DX
+        enddo
+        enddo
+        DEX(1,:)  = DEX(2   ,:)
+        DEX(NX,:) = DEX(NX-1,:)
+
         ! wypelnianie macierzy
         cmatA = 0
         itmp  = 1
@@ -1608,6 +1650,7 @@ module modspinsystem
                 idxA (itmp,1) = WINDEX(u,v ,s)
                 idxA (itmp,2) = WINDEX(u,v ,s)
                 itmp = itmp + 1
+
             endif
 
             if(WINDEX(u-1,v,s) > 0) then
@@ -1615,6 +1658,7 @@ module modspinsystem
                 idxA (itmp,1) = WINDEX(u  ,v,s)
                 idxA (itmp,2) = WINDEX(u-1,v,s)
                 itmp = itmp + 1
+
             endif
 
             if(WINDEX(u+1,v,s) > 0) then
@@ -1707,7 +1751,6 @@ module modspinsystem
             allocate(HBROWS(TRANS_MAXN+1))
             call convert_to_HB(MATASIZE,IDXA,HBROWS)
         endif
-
 
 
      call zfeast_hcsrev('F',&               ! - 'F' oznacza ze podawana jest pelna macierz
@@ -1831,7 +1874,7 @@ module modspinsystem
             allocate(Widmo_Evals(Widmo_NoStates))
             Widmo_Evals(1:Widmo_NoStates) = Evalues(1:Widmo_NoStates)
         endif
-
+        print*,"Problem wlasny stop: etap:",obecny_etap
 
 
     end subroutine spinsystem_widmo
