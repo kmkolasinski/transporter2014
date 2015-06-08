@@ -1619,7 +1619,8 @@ module modspinsystem
             allocate(Rerrors(M0))
        endif
         DUTOTAL = UTOTAL/1000.0/Rd
-
+        DEX = 0
+        DEY = 0
         ! pole elekrtyczne jest trzymane w jednostkach donorowych
         do i = 1 , NX
         do j = 2 , NY-1
@@ -1654,7 +1655,7 @@ module modspinsystem
             endif
 
             if(WINDEX(u-1,v,s) > 0) then
-                cmatA(itmp)   = Tu(-1,s,u,v)
+                cmatA(itmp)   = Tu(-1,s,u-1,v) ! minus aby byla hermitowska
                 idxA (itmp,1) = WINDEX(u  ,v,s)
                 idxA (itmp,2) = WINDEX(u-1,v,s)
                 itmp = itmp + 1
@@ -1675,7 +1676,7 @@ module modspinsystem
                 itmp = itmp + 1
             endif
             if(WINDEX(u,v-1,s) > 0) then
-                cmatA(itmp)  = Tv(-1,s,u,v)
+                cmatA(itmp)  = Tv(-1,s,u,v-1) ! minus aby byla hermitowska
                 idxA(itmp,1) = WINDEX(u,v  ,s)
                 idxA(itmp,2) = WINDEX(u,v-1,s)
                 itmp = itmp + 1
