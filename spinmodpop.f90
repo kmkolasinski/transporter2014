@@ -172,8 +172,8 @@ subroutine spinmodpop_utworz_hamiltonian(pk)
         Cx  = exp(II*DX*DX*BZ*(i-hNY))
         Dy  = exp(II*Ey(i)*so_loc*DX)
 
-        Hamiltonian(GINDEX(i,1),GINDEX(i,1)) = UVEC(i) + SUVEC(i,+1) + 4*t0 + 0.5 * G_LAN * M_EFF * BZ - t0*Kmx*Cx*conjg(Dy) - t0*Kx*conjg(Cx)*Dy
-        Hamiltonian(GINDEX(i,1),GINDEX(i,2)) = tc0*Kx*conjg(Cx) - tc0*Kmx*Cx + 0.5 * G_LAN * M_EFF * (Bx  - II*By)
+        Hamiltonian(GINDEX(i,1),GINDEX(i,1)) = UVEC(i) + SUVEC(i,+1) + 4*t0 + 0.5 * 0.5 * G_LAN * M_EFF * BZ - t0*Kmx*Cx*conjg(Dy) - t0*Kx*conjg(Cx)*Dy
+        Hamiltonian(GINDEX(i,1),GINDEX(i,2)) = tc0*Kx*conjg(Cx) - tc0*Kmx*Cx + 0.5 * 0.5 * G_LAN * M_EFF * (Bx  - II*By)
 
         if ( i > 1 ) then
             Hamiltonian(GINDEX(i,1),GINDEX(i-1,1)) = -t0
@@ -185,8 +185,8 @@ subroutine spinmodpop_utworz_hamiltonian(pk)
         endif
 
         ! spin down
-        Hamiltonian(GINDEX(i,2),GINDEX(i,2)) = UVEC(i) + SUVEC(i,+1) + 4*t0 - 0.5 * G_LAN * M_EFF * BZ - t0*Kmx*Cx*(Dy) - t0*Kx*conjg(Cx)*conjg(Dy)
-        Hamiltonian(GINDEX(i,2),GINDEX(i,1)) = -tc0*Kx*conjg(Cx) + tc0*Kmx*Cx + 0.5 * G_LAN * M_EFF * (Bx  + II*By)
+        Hamiltonian(GINDEX(i,2),GINDEX(i,2)) = UVEC(i) + SUVEC(i,+1) + 4*t0 - 0.5* 0.5 * G_LAN * M_EFF * BZ - t0*Kmx*Cx*(Dy) - t0*Kx*conjg(Cx)*conjg(Dy)
+        Hamiltonian(GINDEX(i,2),GINDEX(i,1)) = -tc0*Kx*conjg(Cx) + tc0*Kmx*Cx + 0.5* 0.5 * G_LAN * M_EFF * (Bx  + II*By)
 
         if ( i > 1 ) then
             Hamiltonian(GINDEX(i,2),GINDEX(i-1,2)) = -t0
@@ -520,16 +520,16 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
 
 ! Przygotowanei podmacierzy (E-H) i macierzy od raszby
     do i = 1 , N
-        Mham(i,i,1)   = UVEC(i) + spinuvec(i,+1) + 4*t0 + 0.5 * G_LAN * M_EFF * BZ - Ef
-        Mham(i,i,2)   = UVEC(i) + spinuvec(i,-1) + 4*t0 - 0.5 * G_LAN * M_EFF * BZ - Ef
+        Mham(i,i,1)   = UVEC(i) + spinuvec(i,+1) + 4*t0 + 0.5 * 0.5 * G_LAN * M_EFF * BZ - Ef
+        Mham(i,i,2)   = UVEC(i) + spinuvec(i,-1) + 4*t0 - 0.5 * 0.5 * G_LAN * M_EFF * BZ - Ef
         if(i < N) Mham(i,i+1,:) = -t0
         if(i > 1) Mham(i,i-1,:) = -t0
 
         if(i < N) MatS(i,i+1,:) = -II*so_rashba*tc0
         if(i > 1) MatS(i,i-1,:) = +II*so_rashba*tc0
         ! zeeman spin down
-        MatS(i,i,2) = 0.5 * G_LAN * M_EFF * ( BX - II * BY)
-        MatS(i,i,1) = 0.5 * G_LAN * M_EFF * ( BX + II * BY)
+        MatS(i,i,2) = 0.5 * 0.5 * G_LAN * M_EFF * ( BX - II * BY)
+        MatS(i,i,1) = 0.5 * 0.5 * G_LAN * M_EFF * ( BX + II * BY)
     enddo
 
     ! Wypelnienie macierzy:
