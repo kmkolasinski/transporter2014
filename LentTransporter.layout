@@ -1,23 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
 <CodeBlocks_layout_file>
-<<<<<<< HEAD
-	<ActiveTarget name="Release" />
-	<File name="modsystem.f90" open="0" top="0" tabpos="3" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-=======
 	<ActiveTarget name="Debug" />
-	<File name="modjed.F90" open="1" top="0" tabpos="5" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
->>>>>>> 612f358bf089bbbc4e4ce0c61ee14b575a4426a9
-		<Cursor>
-			<Cursor1 position="3907" topLine="47" />
-		</Cursor>
-	</File>
-	<File name="modzrodlo.f90" open="0" top="0" tabpos="7" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="16640" topLine="295" />
-		</Cursor>
-	</File>
-<<<<<<< HEAD
-	<File name="modjed.F90" open="0" top="0" tabpos="5" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
+	<File name="modsystem.f90" open="0" top="0" tabpos="3" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
 		<Cursor>
 			<Cursor1 position="1478" topLine="2" />
 		</Cursor>
@@ -27,9 +11,29 @@
 			<Cursor1 position="27250" topLine="788" />
 		</Cursor>
 	</File>
+	<File name="modpop.F90" open="0" top="0" tabpos="3" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
+		<Cursor>
+			<Cursor1 position="26390" topLine="969" />
+		</Cursor>
+	</File>
+	<File name="config.ini" open="1" top="1" tabpos="3" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
+		<Cursor>
+			<Cursor1 position="880" topLine="12" />
+		</Cursor>
+	</File>
 	<File name="modspinzrodlo.f90" open="0" top="0" tabpos="3" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
 		<Cursor>
 			<Cursor1 position="19885" topLine="367" />
+		</Cursor>
+	</File>
+	<File name="modspindft.f90" open="0" top="0" tabpos="4" split="0" active="1" splitpos="0" zoom_1="1" zoom_2="0">
+		<Cursor>
+			<Cursor1 position="10692" topLine="246" />
+		</Cursor>
+	</File>
+	<File name="spinmodsystem.f90" open="1" top="0" tabpos="2" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
+		<Cursor>
+			<Cursor1 position="25851" topLine="194" />
 		</Cursor>
 	</File>
 	<File name="main.f90" open="1" top="0" tabpos="1" split="0" active="1" splitpos="0" zoom_1="1" zoom_2="0">
@@ -40,97 +44,6 @@
 	<File name="c_fortran_zgssv.c" open="0" top="0" tabpos="4" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
 		<Cursor>
 			<Cursor1 position="35238" topLine="828" />
-		</Cursor>
-	</File>
-	<File name="modpop.F90" open="0" top="0" tabpos="3" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="26390" topLine="969" />
-		</Cursor>
-	</File>
-	<File name="modspindft.f90" open="0" top="0" tabpos="4" split="0" active="1" splitpos="0" zoom_1="1" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="10692" topLine="246" />
-=======
-	<File name="modsystem.f90" open="1" top="0" tabpos="3" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="96" topLine="0" />
-		</Cursor>
-	</File>
-	<File name="modutils.F90" open="0" top="0" tabpos="7" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="7127" topLine="240" />
-		</Cursor>
-	</File>
-	<File name="config.ini" open="1" top="0" tabpos="2" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="560" topLine="12" />
-		</Cursor>
-	</File>
-	<File name="modinip.F90" open="0" top="0" tabpos="7" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="1376" topLine="39" />
-		</Cursor>
-	</File>
-	<File name="modspindft.f90" open="1" top="0" tabpos="6" split="0" active="1" splitpos="0" zoom_1="1" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="22351" topLine="410" />
-		</Cursor>
-	</File>
-	<File name="modzrodlo.f90" open="0" top="0" tabpos="7" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="16640" topLine="295" />
-		</Cursor>
-	</File>
-	<File name="main.f90" open="1" top="0" tabpos="1" split="0" active="1" splitpos="0" zoom_1="1" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="4311" topLine="80" />
->>>>>>> 612f358bf089bbbc4e4ce0c61ee14b575a4426a9
-		</Cursor>
-	</File>
-	<File name="modinip.F90" open="0" top="0" tabpos="7" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="1376" topLine="39" />
-		</Cursor>
-	</File>
-<<<<<<< HEAD
-	<File name="modutils.F90" open="0" top="0" tabpos="7" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="7127" topLine="240" />
-		</Cursor>
-	</File>
-	<File name="config.ini" open="1" top="0" tabpos="2" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="686" topLine="12" />
-		</Cursor>
-	</File>
-	<File name="spinmodsystem.f90" open="1" top="0" tabpos="3" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="20821" topLine="501" />
-		</Cursor>
-	</File>
-	<File name="makefile" open="1" top="1" tabpos="4" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="284" topLine="0" />
-=======
-	<File name="spinmodpop.f90" open="0" top="0" tabpos="5" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="10170" topLine="291" />
-		</Cursor>
-	</File>
-	<File name="makefile" open="0" top="0" tabpos="4" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="1874" topLine="45" />
-		</Cursor>
-	</File>
-	<File name="spinmodsystem.f90" open="1" top="1" tabpos="4" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="64196" topLine="1643" />
-		</Cursor>
-	</File>
-	<File name="c_fortran_zgssv.c" open="0" top="0" tabpos="4" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
-		<Cursor>
-			<Cursor1 position="35238" topLine="828" />
->>>>>>> 612f358bf089bbbc4e4ce0c61ee14b575a4426a9
 		</Cursor>
 	</File>
 </CodeBlocks_layout_file>
