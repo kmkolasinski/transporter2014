@@ -79,7 +79,6 @@ module modspinsystem
     public :: spinsystem_zapisz_do_pliku , spinsystem_rozwiaz_problem
     public :: spinsystem_gauss, spinsystem_dodaj_lorentza , spinsystem_dodaj_gaussa, spinsystem_dodaj_pionowy_slupek_potencjalu
     public :: spinsystem_fermi, spinsystem_fermiT, spinsystem_dfermidE
-    public :: spinsystem_finalizuj_poprawki,spinsystem_rozwiaz_problem_z_poprawki
     public :: spinsystem_widmo,spinsystem_zapisz_widmo_do_pliku,Widmo_NoStates,Widmo_Evals,Widmo_Vecs
     public :: ZAPISZ_STANY_WLASNE , ZAPISZ_WIDMO_VRTCAL , ZAPISZ_WIDMO_HRZNTL
 !    public :: TRANS_T,TRANS_R
@@ -131,6 +130,9 @@ module modspinsystem
         DUTOTAL= 0
         SUTOTAL= 0
         PHI    = 0
+        DEX    = 0
+        DEY    = 0
+        CURRENT = 0
         ! Tworzymy uklad...
         no_zrodel = pLiczbaZrodel
         allocate(zrodla(no_zrodel))
@@ -357,15 +359,13 @@ module modspinsystem
     ! --------------------------------------------------------------------
     ! Rozwiazywanie problemu dla zrodla o podanym numerze - nrz
     ! --------------------------------------------------------------------
-    subroutine spinsystem_rozwiaz_problem(nrz,TR_MAT,do_poprawki)
+    subroutine spinsystem_rozwiaz_problem(nrz,TR_MAT)
         integer,intent(in)  :: nrz
         double precision,dimension(:,:), allocatable  :: TR_MAT
-        logical,optional :: do_poprawki
+        integer,allocatable :: HBROWS(:)
         doubleprecision :: YA, YB
         complex*16 ::  Zup , Zdwn
         integer :: i,j,ni,nj,mod_in,dir
-        logical :: bczysc_tablice
-        doubleprecision :: timer_factorization,timer_solution
 
         Ef  = atomic_Ef/1000.0/Rd
         BZ  = BtoDonorB(atomic_Bz)
@@ -375,30 +375,23 @@ module modspinsystem
 
         print*,"! ----------------------------------------------- !"
         print*,"! Rozpoczecie obliczen dla zrodla=", nrz
-        print*,"!   Ef=", atomic_Ef , "[meV]"
-        print*,"!   Bz=", atomic_Bx , "[T]"
-        print*,"!   Bz=", atomic_By , "[T]"
-        print*,"!   Bz=", atomic_Bz , "[T]"
+        print*,"!   Ef=", Ef*Rd*1000    , "[meV]"
+        print*,"!   Bz=", DonorBtoB(Bz) , "[T]"
         print*,"! ----------------------------------------------- !"
 
 
-
-        !call reset_clock()
+        call reset_clock()
         call oblicz_rozmiar_macierzy()
 !        print*,"Oblicz rozmiar macierzy:", get_clock()
-        !call reset_clock()
+        call reset_clock()
 
-        if( allocated(CMATA) ) deallocate(CMATA)
-        if( allocated(IDXA) )  deallocate(IDXA)
-        if( allocated(VPHI) )  deallocate(VPHI)
-        if( allocated(HBROWS) )deallocate(HBROWS)
 
         allocate(CMATA(MATASIZE))
         allocate(IDXA (MATASIZE,2))
         allocate(VPHI(TRANS_MAXN))
         allocate(HBROWS(TRANS_MAXN+1))
-        if( allocated(WAVEFUNC) ) deallocate(WAVEFUNC)
-        allocate(WAVEFUNC(zrodla(nrz)%liczba_modow,TRANS_MAXN))
+!        if( allocated(WAVEFUNC) ) deallocate(WAVEFUNC)
+!        allocate(WAVEFUNC(nx,ny,zrodla(nrz)%liczba_modow))
 
         ! tablice z wspolczynnikami T i R
         if(allocated(TR_MAT))deallocate(TR_MAT)
@@ -438,20 +431,13 @@ module modspinsystem
         call wypelnij_macierz()
         call convert_to_HB(MATASIZE,IDXA,HBROWS)
 !        print*,"Tworzenie macierzy:", get_clock()
-        !call reset_clock()
-        timer_factorization  = get_clock()
+        call reset_clock()
         call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,1)
 !        print*,"Pierwszy solve:", get_clock()
-        timer_factorization = get_clock() - timer_factorization
-
-        timer_solution = 0
-        !call reset_clock()
+        call reset_clock()
 
 
         do mod_in = 1 , zrodla(nrz)%liczba_modow
-
-
-        !call reset_clock()
         VPHI = 0
         zrodla(nrz)%ck(:)      = 0
         zrodla(nrz)%ck(mod_in) = 1
@@ -468,19 +454,12 @@ module modspinsystem
 
 
         call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,2)
-
-        ! zapisywanie rozwiazan dla modow
-
-        WAVEFUNC(mod_in,:) = VPHI(:)
-
-
         call system_oblicz_J()
         call oblicz_TR(nrz,mod_in)
 
         do i = 1 ,no_zrodel
             TR_MAT(i,mod_in) = sum( abs(zrodla(i)%TR(1:zrodla(i)%liczba_modow,-zrodla(i)%dir)) )
         enddo
-
 
         do i = 1 , Nx
         do j = 1 , Ny
@@ -516,160 +495,16 @@ module modspinsystem
         print*,"T = ", TRANS_T
         print*,"R = ", TRANS_R
         print*,"W = ", TRANS_R + TRANS_T
-        zrodla(nrz)%ck(:)      = 0
-        timer_solution =  get_clock()
+        call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,3)
+	    zrodla(nrz)%ck(:)      = 0
 
-        ! jesli chcemy wykorzystac otrzymana faktoryzacje do liczenia poprawek
-        ! nie mozemy jej usuwac, to samo dotyczy obliczonych modow poprzecznych
-        ! oraz innych macierzy
-        bczysc_tablice = .true.
-        if(present(do_poprawki)) then
-        if(do_poprawki == .true.) then
-            bczysc_tablice = .false.
-            print*,"Uwaga tryb poprawek. Po skonczeniu wywolaj funkcje: finalizuj_poprawki"
-            print*,"Czas faktoryzacji:",timer_factorization," [s]"
-            print*,"Czas mnozenia    :",timer_solution," [s]"
-            print*,"Wsp. przyspiesz. :",(timer_factorization+timer_solution)/(timer_solution)
-            print*,"Wsp. prsp. na mod:",(timer_factorization+timer_solution/zrodla(nrz)%liczba_modow)/(timer_solution/zrodla(nrz)%liczba_modow)
-        endif
-        endif
-
-
-        if(bczysc_tablice) then
-            call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,3)
-            deallocate(CMATA)
-            deallocate(IDXA)
-            deallocate(VPHI)
-            deallocate(HBROWS)
-        endif
+        deallocate(CMATA)
+        deallocate(IDXA)
+        deallocate(VPHI)
+        deallocate(HBROWS)
 
     end subroutine spinsystem_rozwiaz_problem
-
-
-
-    subroutine spinsystem_finalizuj_poprawki()
-            call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,3)
-            deallocate(CMATA)
-            deallocate(IDXA)
-            deallocate(VPHI)
-            deallocate(HBROWS)
-    end subroutine spinsystem_finalizuj_poprawki
-
-    ! --------------------------------------------------------------------
-    ! Rozwiazywanie problemu dla zrodla o podanym numerze - nrz
-    ! --------------------------------------------------------------------
-    subroutine spinsystem_rozwiaz_problem_z_poprawki(nrz,TR_MAT,Uperturb)
-        integer,intent(in)  :: nrz
-        double precision,dimension(:,:), allocatable  :: TR_MAT
-        doubleprecision,dimension(:,:)                :: Uperturb
-        doubleprecision :: YA, YB
-        complex*16 ::  Zup , Zdwn
-        integer :: i,j,s,ni,nj,mod_in,dir,np
-        complex*16,allocatable :: VPHI0(:)
-
-        print*,"! ----------------------------------------------- !"
-        print*,"! Tryb poprawki dla zrodla", nrz
-        print*,"! ----------------------------------------------- !"
-
-
-
-
-        ! tablice z wspolczynnikami T i R
-        if(allocated(TR_MAT))deallocate(TR_MAT)
-        allocate(TR_MAT(no_zrodel,zrodla(nrz)%liczba_modow))
-        TR_MAT = 0
-        CURRENT = 0;
-        DIVJ    = 0
-        CURRENTXY = 0
-        POLARYZACJE = 0
-        PHI     = 0
-        TRANS_R = 0
-        TRANS_T = 0
-
-        ! zmienne do rachunku  zaburzen
-        allocate(VPHI0(TRANS_MAXN))
-
-        ! --------------------------------------------------------------------
-        !
-        ! --------------------------------------------------------------------
-        do mod_in = 1 , zrodla(nrz)%liczba_modow
-        zrodla(nrz)%ck(:)      = 0
-        zrodla(nrz)%ck(mod_in) = 1
-
-
-        VPHI  = WAVEFUNC(mod_in,:)
-        VPHI0 = WAVEFUNC(mod_in,:)
-
-        do np = 1 , 1
-
-            do i = 1 , Nx
-            do j = 1 , Ny
-                do s = +1 , -1  , -2
-                if(GINDEX(i,j,+1) > 0) then
-                    VPHI(GINDEX(i,j,s)) = - Uperturb(i,j) * VPHI(GINDEX(i,j,s))
-                endif
-                enddo
-            enddo
-            enddo
-
-            call solve_system(TRANS_MAXN,MATASIZE,IDXA(:,2),HBROWS,CMATA(:),VPHI,2)
-            VPHI0 = VPHI0 + VPHI
-        enddo
-
-        VPHI =  VPHI0
-
-
-        !call system_oblicz_J()
-        call oblicz_TR(nrz,mod_in)
-
-        do i = 1 ,no_zrodel
-            TR_MAT(i,mod_in) = sum( abs(zrodla(i)%TR(1:zrodla(i)%liczba_modow,-zrodla(i)%dir)) )
-        enddo
-
-        do i = 1 , Nx
-        do j = 1 , Ny
-            if(GINDEX(i,j,+1) > 0) PHI(i,j,+1) = PHI(i,j,+1) + abs( VPHI(GINDEX(i,j,+1)) )**2
-            if(GINDEX(i,j,-1) > 0) PHI(i,j,-1) = PHI(i,j,-1) + abs( VPHI(GINDEX(i,j,-1)) )**2
-
-!            if(GINDEX(i,j,+1) > 0) then
-!            Zup  = VPHI(GINDEX(i,j,+1))
-!            Zdwn = VPHI(GINDEX(i,j,-1))
-!            ! Kierunek Z
-!            YA = (abs(Zup)**2)
-!            YB = (abs(Zdwn)**2)
-!            POLARYZACJE(i,j,1) = POLARYZACJE(i,j,1) + (YA-YB)!/(YA+YB) ! kierunek z
 !
-!            ! Kierunek X
-!            YA = (abs(Zup+Zdwn)**2) ! up
-!            YB = (abs(Zup-Zdwn)**2) ! down
-!            POLARYZACJE(i,j,2) = POLARYZACJE(i,j,2) + (YA-YB)!/(YA+YB) ! kierunek x
-!
-!            ! Kierunek Y
-!            YA = (abs(Zup+II*Zdwn)**2)
-!            YB = (abs(Zup-II*Zdwn)**2)
-!            POLARYZACJE(i,j,3) = POLARYZACJE(i,j,3) + (YA-YB)!/(YA+YB) ! kierunek y
-!            endif
-!            if(GINDEX(i,j) > 0) WAVEF  UNC(i,j,mod_in) = VPHI(GINDEX(i,j))
-        enddo
-        enddo
-
-
-        enddo ! end of petla po modach
-
-
-        print*,"T = ", TRANS_T
-        print*,"R = ", TRANS_R
-        print*,"W = ", TRANS_R + TRANS_T
-
-	    zrodla(nrz)%ck(:)      = 0
-	    deallocate(VPHI0)
-
-
-    end subroutine spinsystem_rozwiaz_problem_z_poprawki
-
-
-
-
     ! ---------------------------------------------------------------------
     !   Wyliczanie rozmiaru macierzy: zakladamy, ze na :
     ! 1. warunek Dirichleta potrzeba jedna wartosc
@@ -723,7 +558,7 @@ module modspinsystem
     ! ---------------------------------------------------------------------
     complex*16 function T0(d,s,u,v) result(rval)
         integer :: d,s,u,v
-        rval = 4 / 2.0 / DX / DX + DUTOTAL(u,v) + SUTOTAL(u,v,s) + 0.5 * 0.5*s*G_LAN*M_EFF*BZ - Ef
+        rval = 4 / 2.0 / DX / DX + DUTOTAL(u,v) + SUTOTAL(u,v,s) + 0.5*s*G_LAN*M_EFF*BZ - Ef
     end function T0
 
     complex*16 function Tu(d,s,u,v) result(rval)
@@ -748,7 +583,7 @@ module modspinsystem
 
     complex*16 function Sb(d,s,u,v) result(rval)
         integer :: d,s,u,v
-        rval = 0.5*0.5*G_LAN*M_EFF*(Bx + s * II * By )
+        rval = 0.5*G_LAN*M_EFF*(Bx + s * II * By )
     end function Sb
 
     subroutine wypelnij_macierz()
@@ -776,7 +611,7 @@ module modspinsystem
                     idxA (itmp,2) = GINDEX(u,v , s)
                     itmp = itmp + 1
 
-                    cmatA(itmp)   = Tu(-1,s,u-1,v)
+                    cmatA(itmp)   = Tu(-1,s,u,v)
                     idxA (itmp,1) = GINDEX(u  ,v,s)
                     idxA (itmp,2) = GINDEX(u-1,v,s)
                     itmp = itmp + 1
@@ -791,13 +626,13 @@ module modspinsystem
                     idxA(itmp,2) = GINDEX(u,v+1,s)
                     itmp = itmp + 1
 
-                    cmatA(itmp)  = Tv(-1,s,u,v-1)
+                    cmatA(itmp)  = Tv(-1,s,u,v)
                     idxA(itmp,1) = GINDEX(u,v  ,s)
                     idxA(itmp,2) = GINDEX(u,v-1,s)
                     itmp = itmp + 1
 
                     ! oddzialywanie typu rashba
-                    cmatA(itmp)   = Su(-1,-s,u-1,v)
+                    cmatA(itmp)   = Su(-1,-s,u,v)
                     idxA (itmp,1) = GINDEX(u  ,v,+s)
                     idxA (itmp,2) = GINDEX(u-1,v,-s)
                     itmp = itmp + 1
@@ -812,7 +647,7 @@ module modspinsystem
                     idxA(itmp,2) = GINDEX(u,v+1,-s)
                     itmp = itmp + 1
 
-                    cmatA(itmp)  = Sv(-1,-s,u,v-1)
+                    cmatA(itmp)  = Sv(-1,-s,u,v)
                     idxA(itmp,1) = GINDEX(u,v  ,+s)
                     idxA(itmp,2) = GINDEX(u,v-1,-s)
                     itmp = itmp + 1
@@ -1674,15 +1509,31 @@ module modspinsystem
             obecny_etap = etap
         endif
 
+        print*,"Problem wlasny start: etap:",obecny_etap
 
         if(obecny_etap == 2) then
+            fpm  = 0
+            info = 0
+
+
+
             if(allocated(CMATA))    deallocate(CMATA)
             if(allocated(IDXA))     deallocate(IDXA)
             if(allocated(HBROWS))   deallocate(HBROWS)
             if(allocated(WINDEX))   deallocate(WINDEX)
-            if(allocated(EVectors)) deallocate(EVectors)
-            if(allocated(Evalues))  deallocate(Evalues)
-            if(allocated(Rerrors))  deallocate(Rerrors)
+
+            if(allocated(EVectors)) then
+                EVectors = 0
+                deallocate(EVectors)
+                endif
+            if(allocated(Evalues)) then
+                Evalues = 0
+                deallocate(Evalues)
+                endif
+            if(allocated(Rerrors)) then
+                Rerrors = 0
+                deallocate(Rerrors)
+                endif
             return
         endif
 
@@ -1763,6 +1614,24 @@ module modspinsystem
             allocate(Rerrors(M0))
        endif
         DUTOTAL = UTOTAL/1000.0/Rd
+        DEX = 0
+        DEY = 0
+        ! pole elekrtyczne jest trzymane w jednostkach donorowych
+        do i = 1 , NX
+        do j = 2 , NY-1
+            DEY(i,j) = (DUTOTAL(i,j+1) - DUTOTAL(i,j-1))/2/DX
+        enddo
+        enddo
+        DEY(:,1)  = DEY(:,2)
+        DEY(:,NY) = DEY(:,NY-1)
+
+        do i = 2 , NX-1
+        do j = 1 , NY
+            DEX(i,j) = (DUTOTAL(i+1,j) - DUTOTAL(i-1,j))/2/DX
+        enddo
+        enddo
+        DEX(1,:)  = DEX(2   ,:)
+        DEX(NX,:) = DEX(NX-1,:)
 
         ! wypelnianie macierzy
         cmatA = 0
@@ -1777,13 +1646,15 @@ module modspinsystem
                 idxA (itmp,1) = WINDEX(u,v ,s)
                 idxA (itmp,2) = WINDEX(u,v ,s)
                 itmp = itmp + 1
+
             endif
 
             if(WINDEX(u-1,v,s) > 0) then
-                cmatA(itmp)   = Tu(-1,s,u-1,v)
+                cmatA(itmp)   = Tu(-1,s,u-1,v) ! minus aby byla hermitowska
                 idxA (itmp,1) = WINDEX(u  ,v,s)
                 idxA (itmp,2) = WINDEX(u-1,v,s)
                 itmp = itmp + 1
+
             endif
 
             if(WINDEX(u+1,v,s) > 0) then
@@ -1800,7 +1671,7 @@ module modspinsystem
                 itmp = itmp + 1
             endif
             if(WINDEX(u,v-1,s) > 0) then
-                cmatA(itmp)  = Tv(-1,s,u,v-1)
+                cmatA(itmp)  = Tv(-1,s,u,v-1) ! minus aby byla hermitowska
                 idxA(itmp,1) = WINDEX(u,v  ,s)
                 idxA(itmp,2) = WINDEX(u,v-1,s)
                 itmp = itmp + 1
@@ -2000,7 +1871,7 @@ module modspinsystem
             allocate(Widmo_Evals(Widmo_NoStates))
             Widmo_Evals(1:Widmo_NoStates) = Evalues(1:Widmo_NoStates)
         endif
-
+        print*,"Problem wlasny stop: etap:",obecny_etap
 
 
     end subroutine spinsystem_widmo

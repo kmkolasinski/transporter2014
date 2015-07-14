@@ -210,7 +210,7 @@ call spinsystem_zwalnienie_pamieci()
 stop
 
 
-!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
+call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
 !call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
 !call spinsystem_zapisz_do_pliku("flag.txt",ZAPISZ_FLAGI)
 
@@ -222,8 +222,13 @@ stop
 
 !call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
 !call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
-!call spinsystem_rozwiaz_problem(1,TR_MAT)
-!call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
+
+
+
+call spinsystem_rozwiaz_problem(1,TR_MAT)
+call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
+
+
 !call spinsystem_zapisz_do_pliku("pot_dft.txt",ZAPISZ_POTENCJAL)
 open(unit = 222, file= "T.txt" )
 write(222,"(20e20.6)"),omega,atomic_Ef,atomic_Bz,sum(TR_MAT(2,:)),sum(TR_MAT(1,:)) !,G21(+1)-G21(-1),G21(+1),G21(-1)
