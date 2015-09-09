@@ -447,6 +447,14 @@
 
           end function clock
 
+          doubleprecision function my_clock() result(t)
+            INTEGER :: clock_rate,c_time
+
+            CALL SYSTEM_CLOCK(COUNT_RATE=clock_rate)
+            CALL SYSTEM_CLOCK(COUNT=c_time)
+            t = dble(c_time)/clock_rate
+
+          end function my_clock
 
           subroutine reset_clock()
             CALL SYSTEM_CLOCK(COUNT=clock1)

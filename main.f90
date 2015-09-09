@@ -51,7 +51,6 @@ call getDoubleValue("Dane","sigmax",sigmax)
 call getDoubleValue("Dane","sigmay",sigmay)
 call getDoubleValue("Dane","xpos",xpos)
 
-
 call modjed_ustaw_konwersje_jednostek(0.0465D0,12.4D0);
 
 !call modjed_ustaw_InGaAs()
@@ -122,9 +121,32 @@ enddo
 !
 !atomic_Ef = 57.8624513068335
 
-call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+time1 = my_clock()
+
+call zrodla(1)%spinzrodlo_ustaw(4,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+call zrodla(2)%spinzrodlo_ustaw(4,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
 call utworz_system(nx)
+TRANS_EIGPROBLEM_PERIODIC_X = .true.
+call spindft_initialize()
+call spindft_solve_temp_annealing()
+
+
+open(unit=222,file="rho.txt")
+
+i = nx/2
+do j = 1 , ny
+    write(222,"(20f20.6)"),j*atomic_DX,DFT_NO_DONORS,new_rho(DFTINDEX(i,j),1),new_rho(DFTINDEX(i,j),-1)
+enddo
+close(222)
+
+
+call spindft_free()
+call spinsystem_zwalnienie_pamieci()
+time2 = my_clock()
+print*,"Calkowity czas:", time2 - time1
+
+stop
+
 
 lx0  = 5.0
 la0  = 0.5

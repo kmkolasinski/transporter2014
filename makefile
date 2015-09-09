@@ -102,7 +102,7 @@ endif
 
 
 
-transporter: main.f90 $(UMFPACK_FILES)  modutils.o modinip.o modjed.o modpop.o spinmodpop.o  modspinzrodlo.o modzrodlo.o $(SUPERLU_FILES) modsystem.o spinmodsystem.o modspindft.o
+transporter: main.f90 $(UMFPACK_FILES)  modutils.o modinip.o modjed.o modmixers.o modpop.o spinmodpop.o  modspinzrodlo.o modzrodlo.o $(SUPERLU_FILES) modsystem.o spinmodsystem.o modspindft.o
 	$(FC) $(FBFLAGS)  main.f90 *.o $(FLIBS)   -o $@
 modinip.o: modinip.F90
 	$(FC) $(FCFLAGS) modinip.F90 -o $@
@@ -119,7 +119,8 @@ modzrodlo.o: modzrodlo.f90
 	$(FC) $(FCFLAGS) modzrodlo.f90 -o $@
 modspinzrodlo.o: modspinzrodlo.f90
 	$(FC) $(FCFLAGS) modspinzrodlo.f90 -o $@
-
+modmixers.o: modmixers.F90
+	$(FC) $(FCFLAGS) modmixers.F90 -o $@
 
 modspindft.o: modspindft.f90
 	$(FC) $(FCFLAGS) modspindft.f90 -o $@

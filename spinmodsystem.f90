@@ -1682,8 +1682,6 @@ module modspinsystem
             fpm  = 0
             info = 0
 
-
-
             if(allocated(CMATA))    deallocate(CMATA)
             if(allocated(IDXA))     deallocate(IDXA)
             if(allocated(HBROWS))   deallocate(HBROWS)
@@ -1917,7 +1915,7 @@ module modspinsystem
 
 
 
-     call zfeast_hcsrev('F',&               ! - 'F' oznacza ze podawana jest pelna macierz
+     call zfeast_hcsrev('F',&                  ! - 'F' oznacza ze podawana jest pelna macierz
                               TRANS_MAXN,&     ! - rozmiar problemu (ile wezlow z flaga B_NORMAL)
                               CMATA(1:nw),&    ! - kolejne nie zerowe wartosci w macierzy H
                               HBROWS,&         ! - numeracja wierszy (rodzaj zapisu macierzy rzakidch)
@@ -1934,8 +1932,8 @@ module modspinsystem
                               Rerrors,&        ! - Wektor z bledami dla kolejnych wartosci wlasnych
                               info)            ! - Ewentualne informacje o bledach
 
-
-        if(wypisz_informacje==1) then
+        print*,"zfeast_hcsrev: calculated:",info
+        if(wypisz_informacje == 1) then
             print*,"Eps wyjsciowy           :",  epsout
             print*,"Liczba iteracji         :",  loop
             print*,"Znaleziona l. stanow    :",  no_evals
