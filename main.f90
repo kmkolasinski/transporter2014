@@ -51,6 +51,7 @@ call getDoubleValue("Dane","sigmax",sigmax)
 call getDoubleValue("Dane","sigmay",sigmay)
 call getDoubleValue("Dane","xpos",xpos)
 
+
 call modjed_ustaw_konwersje_jednostek(0.0465D0,12.4D0);
 
 !call modjed_ustaw_InGaAs()
