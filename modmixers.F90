@@ -1,7 +1,7 @@
 MODULE modmixers
     implicit none
     private
-    logical :: SCF_MIXER_SHOW_DEBUG = .false.
+    logical :: SCF_MIXER_SHOW_DEBUG = .true.
 
     ENUM,BIND(C)
         ENUMERATOR :: SCF_MIXER_SIMPLE            = 1
@@ -49,6 +49,7 @@ MODULE modmixers
         procedure, public, pass(mixer) :: set_output_vec! (mixer,oVec)
         procedure, public, pass(mixer) :: mix! (mixer)
         procedure, public, pass(mixer) :: get_last_residuum! (mixer)
+        procedure, public, pass(mixer) :: get_current_residuum! (mixer)
 
     endtype scfmixer
 
@@ -110,8 +111,8 @@ MODULE modmixers
                 mixer%NO_MEM_STEPS  = 2 ! forcing number of memory steps
                 if(present(max_omega)) mixer%max_omega  = max_omega
 
-                allocate(mixer%vecLocalOmega(nx))
-                mixer%vecLocalOmega = omega
+!                allocate(mixer%vecLocalOmega(nx))
+!                mixer%vecLocalOmega = omega
 
 
             case(SCF_MIXER_ANDERSON)
@@ -155,7 +156,8 @@ MODULE modmixers
         allocate(mixer%vecOut(nx,mixer%NO_MEM_STEPS))
         allocate(mixer%vecRes(nx,mixer%NO_MEM_STEPS))
         allocate(mixer%mixedVec(nx))
-
+        allocate(mixer%vecLocalOmega(nx))
+        mixer%vecLocalOmega = omega
         mixer%vecIn         = 0
         mixer%vecOut        = 0
         mixer%vecRes        = 0
@@ -171,8 +173,17 @@ MODULE modmixers
     ! ------------------------------------------------------------------------- !
     doubleprecision function get_last_residuum(mixer) result(rval)
         class(scfmixer) :: mixer
-        rval = sum((mixer%vecIn(:,1)-mixer%vecOut(:,1))**2)/sum((mixer%vecIn(:,1)+mixer%vecOut(:,1))**2)
+        rval = sum((mixer%vecRes(:,1))**2)/sum((mixer%vecRes(:,1))**2)
     endfunction get_last_residuum
+
+    ! ------------------------------------------------------------------------- !
+    ! get_current_residuum - returns the last normalized value of the residual vector
+    !   Can be used for the simulation stopping criterium.
+    ! ------------------------------------------------------------------------- !
+    doubleprecision function get_current_residuum(mixer) result(rval)
+        class(scfmixer) :: mixer
+        rval = sum((mixer%mixedVec(:)-mixer%vecIn(:,1))**2)/sum((mixer%mixedVec(:)+mixer%vecIn(:,1))**2)
+    endfunction get_current_residuum
 
     ! ------------------------------------------------------------------------- !
     ! free_mixer - frees memory. Use it wisely!

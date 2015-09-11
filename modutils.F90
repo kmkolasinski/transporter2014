@@ -489,9 +489,8 @@
           ! ===============================================
           ! Tworzenie prostych plikow VTK
           ! ===============================================
-          subroutine modutils_3darray2VTK(inArray,dx,filename)
+          subroutine modutils_3darray2VTK(inArray,filename)
               double precision,intent(in),dimension(:,:,:)::inArray
-              doubleprecision :: dx
               character(len=*),intent(in) :: filename
 
               character(len=40) :: text
@@ -500,7 +499,6 @@
               nx = size(inArray,1)
               ny = size(inArray,2)
               nz = size(inArray,3)
-              print *,"VTK:: Array dims:",nx,ny,nz
 
               text = ''
               tlen = len(filename)+1

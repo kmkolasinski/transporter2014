@@ -44,7 +44,7 @@ module modspindft
     doubleprecision,allocatable      :: Basis_KSEnergies(:)
 
 
-    double precision :: DFT_W_PARAM , DFT_MAX_W_PARAM
+    double precision :: DFT_W_PARAM , DFT_MAX_W_PARAM , DFT_AVERAGE_DELTA_ENERGY, DFT_CURR_DELTA_ENERGY
     double precision :: DFT_NO_DONORS , DFT_Z_SPACER
     double precision :: DFT_TEMP ,  DFT_TEMP_MIN  , DFT_CURR_TEMP  , DFT_RESIDUUM , DFT_CURR_RESIDUUM
     doubleprecision  :: DFT_FINDED_EF , DFT_FIXED_ENERGY
@@ -53,6 +53,7 @@ module modspindft
     integer :: DFT_MEM_STEPS
 
     type(scfmixer) :: mixer
+
 
     public :: spindft_initialize , spindft_free , spindft_solve , spindft_fix_ef
     public :: spindft_solve_temp_annealing
@@ -214,7 +215,7 @@ module modspindft
         broyden_V = 0
         DFT_FINDED_EF = 0
 
-
+        !call mixer%init(SCF_MIXER_LOCAL_SIMPLE,DFT_TRANSMAX*2,DFT_W_PARAM,DFT_MAX_W_PARAM,DFT_MEM_STEPS)
         call mixer%init(SCF_MIXER_EXTENDED_ANDERSON,DFT_TRANSMAX*2,DFT_W_PARAM,DFT_MAX_W_PARAM,DFT_MEM_STEPS)
         !call mixer%init(SCF_MIXER_BROYDEN,DFT_TRANSMAX*2,DFT_W_PARAM,DFT_MAX_W_PARAM,DFT_MEM_STEPS)
 
@@ -232,23 +233,143 @@ module modspindft
     subroutine spindft_solve_temp_annealing()
         integer :: itemp , icopy
         doubleprecision :: tomega,dtmp
+
+        integer :: i,j,radius_step,xi,yi,ave_counter,xii,k,smoothstep
+        doubleprecision :: ave_dens,ave_radius,ave_rho,dval,dvalx,dvaly,min_dist
+        doubleprecision :: dens_curvex(-1:1)
+        doubleprecision :: dens_curvey(-1:1),kill_curve
+
         GLOBAL_TEMP_ITER = 0
         open(unit = 8998, file= "dft_iter.txt" )
 
-!        DFT_CURR_TEMP = DFT_TEMP
-!        dtmp          = DFT_NO_DONORS
-!
-!        DFT_NO_DONORS  = 2
-!        dft_donor_dens = DFT_NO_DONORS / DFT_TRANSMAX / DX / DX
-!        call calcHartreePotential(bCalcHartreeDonor=.true.)
-!
-!        call spindft_solve()
-!
-!
-!        DFT_NO_DONORS = dtmp
-!        dft_donor_dens = DFT_NO_DONORS / DFT_TRANSMAX / DX / DX
-!        call calcHartreePotential(bCalcHartreeDonor=.true.)
-!        stop
+
+
+        ave_dens    = DFT_NO_DONORS / DFT_TRANSMAX / (DX)**2
+        ave_radius  = 1.0/sqrt( M_PI * ave_dens)
+        radius_step = ave_radius/DX
+        print*,"Srednia gestosc:",ave_dens
+        print*,"Sredni  promien:",ave_radius*LR2L
+        print*,"Sredni promien :",radius_step
+
+        ! robienie mapy odleglosci od krawedzi
+        do i = 1 , NX
+        do j = 1 , NY
+            ave_counter = 0
+            min_dist = max(nx*dx,ny*dx)
+
+            do xi = 1 , NX
+            do yi = 1 , NY
+                if(TRANS_EIGPROBLEM_PERIODIC_X) then
+                if(GFLAGS(xi,yi) == B_EMPTY) then
+                    dvalx = sqrt(abs(xi-i+0.0)**2 + abs(yi-j+0.0)**2)*dx-2*dx
+                    if(dvalx < min_dist) min_dist = dvalx
+                endif
+                else
+                if(GFLAGS(xi,yi) /= B_NORMAL) then
+                    dvalx = sqrt(abs(xi-i+0.0)**2 + abs(yi-j+0.0)**2)*dx-2*dx
+                    if(dvalx < min_dist) min_dist = dvalx
+                endif
+                endif
+            enddo
+            enddo
+            write(331,*),i,j, max(min_dist/ave_radius,0.0)
+
+            SUTOTAL(i,j,-1) = max(min_dist/ave_radius,0.0)
+
+        enddo
+            write(331,*),""
+        enddo
+
+        smoothstep = max(1,radius_step/4)
+        do k = 1 , 1
+        do i = 1 , NX
+        do j = 1 , NY
+            ave_rho     = 0
+            ave_counter = 0
+            do xi = i-smoothstep , i+smoothstep
+            do yi = j-smoothstep , j+smoothstep
+                xii = xi
+                if(TRANS_EIGPROBLEM_PERIODIC_X) then
+                    xii = abs(mod(xi-1,NX))+1
+                endif
+                if(xii>0 .and. xii<=NX .and. yi>0 .and. yi<=NY) then
+                        dval        = SUTOTAL(xii,yi,-1)
+                        ave_rho     = ave_rho + dval
+                        ave_counter = ave_counter + 1
+                endif
+            enddo
+            enddo
+
+            SUTOTAL(i,j,0) = ave_rho/ave_counter
+
+        enddo
+        enddo
+            SUTOTAL(:,:,-1) = SUTOTAL(:,:,0)
+        enddo
+
+
+        do i = 1 , NX
+        do j = 1 , NY
+            write(332,*),i,j,  SUTOTAL(i,j,-1)
+        enddo
+            write(332,*),""
+        enddo
+
+
+
+
+        rho_tot = 0
+
+        do i = 1 , NX
+        do j = 1 , NY
+            if(DFTINDEX(i,j) > 0) then
+                dvaly                   = SUTOTAL(i,j,-1)
+                dval                    = 1.4*dvaly**2  * exp(-((dvaly)**2)) + 1.0/(1+exp(-(dvaly)**2)) - 0.5
+                rho_tot(DFTINDEX(i,j))  =  dval
+            endif
+        enddo
+        enddo
+        rho(:,1) = rho_tot
+
+
+
+
+        rho_tot = rho_tot / sum(rho_tot) / dx**2 * DFT_NO_DONORS
+
+
+        do i = 1 , NX
+        do j = 1 , NY
+            if(DFTINDEX(i,j) > 0) then
+              write(333,*),i,j,  rho_tot(DFTINDEX(i,j))
+            else
+              write(333,*),i,j,  0
+            endif
+        enddo
+            write(333,*),""
+        enddo
+
+
+        i = nx/2
+        do j = 1 , ny
+            if(DFTINDEX(i,j) > 0) then
+            write(223,"(20f20.6)"),j*atomic_DX,rho(DFTINDEX(i,j),1),rho_tot(DFTINDEX(i,j))
+            else
+                write(223,"(20f20.6)"),j*atomic_DX,0.0,0.0
+            endif
+        enddo
+        SUTOTAL = 0
+
+
+
+        rho(:,-1)   = rho_tot/2
+        rho(:,+1)   = rho_tot/2
+        new_rho     = rho
+
+
+        rho_tot   = 0!      dft_donor_dens
+        rho       = 0!  0.5*dft_donor_dens
+        new_rho   = 0!      dft_donor_dens
+
 
         do itemp = 1 , DFT_TEMP_NO_STEPS
             tomega = (itemp-1.0)/(DFT_TEMP_NO_STEPS-1.0)
@@ -286,11 +407,13 @@ module modspindft
 
     subroutine spindft_solve()
         integer :: i,j,m
+        double precision :: bz_copy
         ! obliczenia startowe dla gestosci elektronowej takiej samej
         ! jak gestosc donorow
         GLOBAL_ITER = 1
         kbT       = 8.617D-5/Rd*DFT_CURR_TEMP
         old_Ef    = 100.0
+        bz_copy   = atomic_Bz
 
 
         ! sprawdzamy czy uzywac rozwiniecie funkcji bazowych
@@ -342,7 +465,12 @@ module modspindft
 
             print*,"Iteracja DFT:", GLOBAL_ITER
             print*,"Temperatura :", kbT * Rd / 8.617D-5
-
+            ! polaryzacja stanow w pierwszych iteracjach
+            if(GLOBAL_TEMP_ITER < 3) then
+               atomic_Bz = 0.5
+            else
+               atomic_Bz = bz_copy
+            endif
 
             if(DFT_USE_PLAIN_WAVES_EXPANSION == .true.) then
                 call spindft_ks_from_basis_iteration()
@@ -350,7 +478,7 @@ module modspindft
 
                 if( ( MOD(GLOBAL_ITER,DFT_IMPROVE_FEAST_STEPS) == 0 &
                     .and. DFT_CURR_RESIDUUM < DFT_RESIDUUM*1000 ) &
-                    .and. GLOBAL_ITER > 5 ) then
+                    .and. GLOBAL_ITER > 5 .and. DFT_USE_CORE_FREEZING == 0 ) then
                     print*,"Zmiana parametrow feast-a:"
                     print*,"    Ef z     :",DFT_ATOMIC_EF," na:",max_Ef * Rd * 1500.0
                     print*,"    L. stanow:",DFT_NO_STATES," na:",max_stanow  + 10
@@ -360,6 +488,7 @@ module modspindft
                 else
                     call spindft_ks_iteration(1)
                 endif
+
 
 
                 if(  DFT_CURR_RESIDUUM < DFT_RESIDUUM*1000 .and. GLOBAL_ITER > 5 &
@@ -468,7 +597,7 @@ module modspindft
         integer :: i,j,s
         logical :: CZY_OSTATNIO_ZAMROZONO_CORE_STATES
 
-        integer :: no_core_states , Core_Iter , Core_Overlap_Test
+        integer :: no_core_states , Core_Iter , Core_Overlap_Test , propper_num_of_states
         complex*16,allocatable :: Core_Widmo_Vecs(:,:) , Core_Widmo_Vecs_Tmp(:,:)
         doubleprecision,allocatable :: Core_Widmo_Evals(:) , Core_Widmo_Evals_Tmp(:)
         doubleprecision :: Core_Last_Enery , Core_Overlap
@@ -507,7 +636,7 @@ module modspindft
         Core_Last_Enery     = 0.0
         no_core_states      = 0
 
-        if(  DFT_CURR_RESIDUUM < DFT_RESIDUUM*1000 .and. GLOBAL_ITER > 5 ) then
+        if(  DFT_CURR_DELTA_ENERGY < DFT_AVERAGE_DELTA_ENERGY/100 .and. GLOBAL_ITER > 5 ) then
             print*,"Warning freezing of core states is enabled!: Curr Res:",DFT_CURR_RESIDUUM
             DFT_FIX_CORE_STATES = .true.
         endif
@@ -530,9 +659,9 @@ module modspindft
                 Core_Last_Enery = Widmo_Evals(no_core_states) + 0.1
                 DFT_FIX_CORE_STATES = .false.
                 do i = no_core_states , 2 , -1
-                    if( abs(Widmo_Evals(i) - Widmo_Evals(i-1)) >  10.0*abs(Ef-old_Ef) ) then
+                    if( abs(Widmo_Evals(i) - Widmo_Evals(i-1)) >  DFT_AVERAGE_DELTA_ENERGY ) then
                         Core_Last_Enery = (Widmo_Evals(i) + Widmo_Evals(i-1))/2
-                        no_core_states = i-1
+                        no_core_states  = i-1
                         DFT_FIX_CORE_STATES = .true.
                         exit
                     endif
@@ -542,8 +671,11 @@ module modspindft
                 print*,"Last core energ:",Core_Last_Enery*Rd*1000
                 print*,"Curr Fermi ener:",Ef*Rd*1000
                 print*,"DeltaFermi ener:",abs(Ef-old_Ef)*Rd*1000
-
-
+                print*,"Zmiana parametrow feast-a:"
+                print*,"    Ef z     :",DFT_ATOMIC_EF," na:",max_Ef * Rd * 1000.0
+                print*,"    L. stanow:",DFT_NO_STATES," na:",max_stanow  + 10
+                !DFT_ATOMIC_EF = max_Ef * Rd * 1000.0
+                !DFT_NO_STATES = max_stanow  + 10
             endif
 
         endif
@@ -557,23 +689,29 @@ module modspindft
             Core_Widmo_Evals = Widmo_Evals
         endif
 
+        propper_num_of_states = DFT_NO_STATES - no_core_states
+
         if(CZY_OSTATNIO_ZAMROZONO_CORE_STATES == .true. .and. DFT_FIX_CORE_STATES==.false.) then
-        print*," <c> Resetowanie problemu wlasnego"
-        call spinsystem_widmo(Core_Last_Enery*Rd*1000,DFT_ATOMIC_EF,DFT_NO_STATES-no_core_states,2,8)
-        call spinsystem_widmo(Core_Last_Enery*Rd*1000,DFT_ATOMIC_EF,DFT_NO_STATES-no_core_states,0,8)
+            print*," <c> Resetowanie problemu wlasnego"
+            call spinsystem_widmo(Core_Last_Enery*Rd*1000,DFT_ATOMIC_EF,propper_num_of_states,2,8)
+            call spinsystem_widmo(Core_Last_Enery*Rd*1000,DFT_ATOMIC_EF,propper_num_of_states,0,8)
         else
-        print*," <c> Rozwiazywanie problemu wlasnego."
-        call spinsystem_widmo(Core_Last_Enery*Rd*1000,DFT_ATOMIC_EF,DFT_NO_STATES-no_core_states,opt,8)
+            print*," <c> Rozwiazywanie problemu wlasnego."
+            call spinsystem_widmo(Core_Last_Enery*Rd*1000,DFT_ATOMIC_EF,propper_num_of_states,opt,8)
         endif
+        DFT_NO_STATES = propper_num_of_states + no_core_states
+
+
 
 667     if(Widmo_NoStates + no_core_states < DFT_NO_DONORS) then
 
             DFT_ATOMIC_EF = DFT_ATOMIC_EF * (1 + 0.5)
             DFT_NO_STATES = DFT_NO_STATES * (1 + 0.5)
             print*,"Za mala energia. Nowa Ef:", DFT_ATOMIC_EF
+            propper_num_of_states = DFT_NO_STATES-no_core_states
+            call spinsystem_widmo(Core_Last_Enery*Rd*1000,DFT_ATOMIC_EF,propper_num_of_states,2,8)
+            call spinsystem_widmo(Core_Last_Enery*Rd*1000,DFT_ATOMIC_EF,propper_num_of_states,0,8)
 
-            call spinsystem_widmo(Core_Last_Enery*Rd*1000,DFT_ATOMIC_EF,DFT_NO_STATES-no_core_states,2,8)
-            call spinsystem_widmo(Core_Last_Enery*Rd*1000,DFT_ATOMIC_EF,DFT_NO_STATES-no_core_states,0,8)
             goto 667
         endif
 
@@ -890,6 +1028,8 @@ module modspindft
     print*,"Obliczona  Energia Fermiego:",Ef*1000*Rd,"[meV]"
     print*,"Maksymalna Energia Fermiego:",max_Ef*1000*Rd,"[meV]"
     print*,"Maksymalna Liczba Stanow   :",max_stanow
+    print*,"Srednia delta energi stanow:",DFT_AVERAGE_DELTA_ENERGY*1000*Rd,"[meV]"
+    print*,"Obecna delta energii       :",DFT_CURR_DELTA_ENERGY*1000*Rd,"[meV]"
 
     if( abs(dens_ele - ndonor) > 0.01) then
 
@@ -922,6 +1062,7 @@ module modspindft
         rho  = 0      ! zerowanie gestosci
         max_stanow = 0
         max_Ef     = 0
+        DFT_AVERAGE_DELTA_ENERGY = 0
         DO val = 1,Widmo_NoStates
             Ei = Widmo_Evals(val)   ! Energie znajduja sie w pierwszej kolumnie eigvals
 
@@ -944,12 +1085,19 @@ module modspindft
             enddo
             enddo ! end of iii - numerowanie po spinach
 
-            if(fermi > 0.00001) then
+            if(fermi > 0.000001) then
                 max_stanow = val
-                max_Ef     = Widmo_Evals(max_stanow)*1.1
+                max_Ef     = Widmo_Evals(max_stanow)*1.0
+            endif
+            ! zliczanie sredniej odleglosci miedzy stanami
+            if(val < Widmo_NoStates) then
+            DFT_AVERAGE_DELTA_ENERGY = DFT_AVERAGE_DELTA_ENERGY + (Widmo_Evals(val+1) - Widmo_Evals(val))
             endif
         end do ! end of do(wartosci wlasne)
 
+        ! sredniowanie
+        DFT_AVERAGE_DELTA_ENERGY = abs(DFT_AVERAGE_DELTA_ENERGY) / (Widmo_NoStates-1)
+        DFT_CURR_DELTA_ENERGY    = abs(Ef - old_Ef)
         r_val = sum(rho)*dx*dx
     end function calcFermiNele
 
@@ -993,6 +1141,8 @@ module modspindft
         doubleprecision, allocatable :: in_rho(:,:),out_rho(:,:)
         integer :: mem , s , i , it_u
         doubleprecision,allocatable :: tmpArray(:)
+        doubleprecision :: residuum , min_residuum , curr_iteration
+        integer :: min_res_method
 
         allocate(tmpArray(2*DFT_TRANSMAX))
 
@@ -1008,9 +1158,29 @@ module modspindft
 
         call mixer%set_output_vec(tmpArray)
         deallocate(tmpArray)
-
         call mixer%mix()
 
+
+!        min_res_method = mixer%MIXER_TYPE
+!        min_residuum   = mixer%get_current_residuum()
+!        print*,"Calculated residuum:",min_residuum
+!        do i = 1 , SCF_MIXER_BROYDEN
+!            print*,"Start:",i
+!            !if( i  /= 3) then
+!            mixer%MIXER_TYPE = i
+!            mixer%CURRENT_ITERATION = mixer%CURRENT_ITERATION - 1
+!            call mixer%mix()
+!            residuum = mixer%get_current_residuum()
+!            if(min_residuum > residuum) then
+!                min_residuum  = residuum
+!                min_res_method = i
+!            endif
+!            print"(I,A,I,e10.2,A,e10.2)",i,"Wybrano ",min_res_method,min_residuum," zamiast:",residuum
+!            !endif
+!        enddo
+!
+!        mixer%MIXER_TYPE = min_res_method
+!        call mixer%mix()
 
         out_rho(:,+1) = mixer%mixedVec(1:DFT_TRANSMAX)
         out_rho(:,-1) = mixer%mixedVec(DFT_TRANSMAX+1:2*DFT_TRANSMAX)

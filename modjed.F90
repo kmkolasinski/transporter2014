@@ -6,8 +6,8 @@ MODULE modjed
     double precision,parameter  :: M_PI      = 3.1415926
     ! promien bohra w nm
     double precision,parameter  :: A0        = 0.0529177249
-    ! jednostka energi (atomowych) meV
-    double precision,parameter  :: E0        = 27211.384523
+    ! jednostka energi (atomowych) eV
+    double precision,parameter  :: E0        = 27.211384523
     complex*16 ,parameter       :: II        = CMPLX(0,1)
 
     double precision,dimension(:,:,:), allocatable:: SUTOTAL ! MACIERZ POTENCJALU EFEKTYWNEGO DLA SPINOW
@@ -63,21 +63,6 @@ integer,parameter :: TRANS_SOLVER = USING_SUPER_LU
         ENUMERATOR :: ZRODLO_KIERUNEK_DOL  = 3
     END ENUM
 
-
-    ENUM,BIND(C)
-        ENUMERATOR :: DFLAG_NORMAL    = 0
-        ENUMERATOR :: DFLAG_DIRICHLET = 1001
-        ENUMERATOR :: DFLAG_NEUMAN    = 1002
-    END ENUM
-
-    ENUM,BIND(C)
-        ENUMERATOR :: DIRECT_POISSON_PREP_MAT = 10
-        ENUMERATOR :: DIRECT_POISSON_SOLVE    = 11
-        ENUMERATOR :: DIRECT_POISSON_FREE_SOLVER = 12
-    END ENUM
-
-
-
     contains
     subroutine modjed_jaki_kierunek(kierunek)
         integer :: kierunek
@@ -120,14 +105,14 @@ integer,parameter :: TRANS_SOLVER = USING_SUPER_LU
 
         E_MAT     = pE_MAT
         M_EFF     = pM_EFF
-        Rd        = E0
-        L2LR      = 1.0/A0
+        Rd        = E0*M_EFF/E_MAT/E_MAT
+        L2LR      = M_EFF/E_MAT/A0
         LR2L      = 1.0/L2LR
         !kbT       = 8.617D-5*Temp/Rd
 
         atomic_Rashba = so_alpha3D*so_Fz
         atomic_LOC    = so_alpha3D
-        so_rashba     = atomic_Rashba * L2LR / Rd
+        so_rashba     = atomic_Rashba * L2LR  / 1000.0 / Rd
         so_loc        = atomic_LOC * L2LR * L2LR
         print*,"Rashba  =",so_rashba," [donorowe]"
         print*,"Lateral =",so_loc   ," [donorowe]"
@@ -136,16 +121,16 @@ integer,parameter :: TRANS_SOLVER = USING_SUPER_LU
 
 
 
-!    ! Funkcja konwertujaca pole magnetyczne w teslach do
-!    ! pola w jednostkach donorowych.
-!    double precision function BtoDonorB(inBZ) result(rval)
-!      double precision, intent(in) :: inBZ
-!      rval = 2*inBZ/m_eff*5.78838e-5/Rd
-!    endfunction BtoDonorB
-!
-!    double precision function DonorBtoB(inBZ) result(rval)
-!      double precision, intent(in) :: inBZ
-!      rval = inBZ*m_eff/5.78838e-5*Rd/2
-!    endfunction DonorBtoB
+    ! Funkcja konwertujaca pole magnetyczne w teslach do
+    ! pola w jednostkach donorowych.
+    double precision function BtoDonorB(inBZ) result(rval)
+      double precision, intent(in) :: inBZ
+      rval = 2*inBZ/m_eff*5.78838e-5/Rd
+    endfunction BtoDonorB
+
+    double precision function DonorBtoB(inBZ) result(rval)
+      double precision, intent(in) :: inBZ
+      rval = inBZ*m_eff/5.78838e-5*Rd/2
+    endfunction DonorBtoB
 
 END MODULE modjed

@@ -25,7 +25,7 @@ program transporter
  character(len=16) :: file_name
  doubleprecision :: lx0 , la0, ld0 , xtip , ytip
  doubleprecision, allocatable ,dimension(:,:) :: PPOT
- doubleprecision :: time1 , time2
+ doubleprecision :: time1 , time2 , ave_dens
 ! -----------------------------------------------
 ! Zmienne wczytywane z config.ini
 ! -----------------------------------------------
@@ -50,7 +50,6 @@ call getDoubleValue("Dane","gamma",gamma)
 call getDoubleValue("Dane","sigmax",sigmax)
 call getDoubleValue("Dane","sigmay",sigmay)
 call getDoubleValue("Dane","xpos",xpos)
-
 
 call modjed_ustaw_konwersje_jednostek(0.0465D0,12.4D0);
 
@@ -128,15 +127,25 @@ call zrodla(1)%spinzrodlo_ustaw(4,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
 call zrodla(2)%spinzrodlo_ustaw(4,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
 call utworz_system(nx)
 TRANS_EIGPROBLEM_PERIODIC_X = .true.
+call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
+call spinsystem_zapisz_do_pliku("f.txt",ZAPISZ_FLAGI)
 call spindft_initialize()
+
+print*,"sredni promien:", 1/sqrt( M_PI * DFT_NO_DONORS / nx / ny / (atomic_DX)**2 )
+
 call spindft_solve_temp_annealing()
 
 
+ave_dens = DFT_NO_DONORS / nx / ny / (atomic_DX*L2LR)**2
+print*,"sredni promien:", 1/sqrt( M_PI * DFT_NO_DONORS / nx / ny / (atomic_DX)**2 )
 open(unit=222,file="rho.txt")
 
 i = nx/2
 do j = 1 , ny
-    write(222,"(20f20.6)"),j*atomic_DX,DFT_NO_DONORS,new_rho(DFTINDEX(i,j),1),new_rho(DFTINDEX(i,j),-1)
+    if(GINDEX(i,j,1)>0) then
+    write(222,"(20f20.6)"),j*atomic_DX,DFT_NO_DONORS,&
+    new_rho(DFTINDEX(i,j),1),new_rho(DFTINDEX(i,j),-1),ave_dens
+    endif
 enddo
 close(222)
 
@@ -461,8 +470,10 @@ subroutine utworz_system(nx)
     ! prosty test
 
 
-    wjazd  = nx/2+3
+    wjazd  = nx/2+10
     GFLAGS = B_EMPTY
+
+!    GFLAGS(nx/2-10:nx/2+10,ny/2-20:ny/2+20) = B_NORMAL
 
     ! dajemy na brzegach dirichleta
     GFLAGS(1,:)  = B_DIRICHLET
@@ -470,7 +481,7 @@ subroutine utworz_system(nx)
     GFLAGS(:,1)  = B_DIRICHLET
     GFLAGS(:,NY) = B_DIRICHLET
 !    call system_inicjalizacja_ukladu(wjazd,2,4)
-    call spinsystem_inicjalizacja_ukladu(wjazd,4,4)
+    call spinsystem_inicjalizacja_ukladu(wjazd,4,0)
 end subroutine utworz_system
 
 double precision function gauss_gate(U0,xp,yp,sigmax,sigmay,x,y) result(rval)
