@@ -32,6 +32,7 @@ MODULE modjed
 
     logical,parameter :: TRANS_DEBUG = .false.
     logical           :: TRANS_EIGPROBLEM_PERIODIC_X = .false.
+    logical           :: TRANS_USE_RESTRICTED_DFT = .false.
 
      ENUM,BIND(C)
         ENUMERATOR :: USING_SUPER_LU      = 0

@@ -23,9 +23,7 @@ program transporter
  double precision :: width , G21(-1:1) , G23(-1:1) , sigmax , sigmay , kvec , poleB
  double precision :: fread(4)
  character(len=16) :: file_name
- doubleprecision :: lx0 , la0, ld0 , xtip , ytip
- doubleprecision, allocatable ,dimension(:,:) :: PPOT
- doubleprecision :: time1 , time2 , ave_dens
+
 ! -----------------------------------------------
 ! Zmienne wczytywane z config.ini
 ! -----------------------------------------------
@@ -51,47 +49,17 @@ call getDoubleValue("Dane","sigmax",sigmax)
 call getDoubleValue("Dane","sigmay",sigmay)
 call getDoubleValue("Dane","xpos",xpos)
 
+
 call modjed_ustaw_konwersje_jednostek(0.0465D0,12.4D0);
 
 !call modjed_ustaw_InGaAs()
 !call modjed_ustaw_InSb()
-
-
-
-UTOTAL = 0
-allocate(PPOT(nx,ny))
-PPOT = 0
-
-
-!call system_inicjalizacja(NX,NY,liczba_zrodel);
-!
-!call zrodla(1)%zrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-!call zrodla(2)%zrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
-!call system_dodaj_lorentza(1.0D0,20.0D0,20.0D0,400.0D0,50.0D0);
-!call utworz_system()
-!call system_rozwiaz_problem(1,TR_MAT)
-!
-!call system_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
-!call system_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
-!call system_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
-!UTOTAL = 0
-!call system_dodaj_lorentza(1.0D0,20.0D0,20.0D0,400.0D0,60.0D0);
-!!call system_rozwiaz_problem(1,TR_MAT)
-!!call system_zapisz_do_pliku("d_phi.txt",ZAPISZ_PHI)
-!call system_rozwiaz_problem_iteracyjnie(1,1,TR_MAT)
-!!call system_rozwiaz_problem(1,TR_MAT)
-!call system_zapisz_do_pliku("i_phi.txt",ZAPISZ_PHI)
-!call system_zapisz_do_pliku("i_pot.txt",ZAPISZ_POTENCJAL)
-!call system_zapisz_do_pliku("i_kon.txt",ZAPISZ_KONTUR)
-!
-!call system_zwalnienie_pamieci()
-!if(allocated(TR_MAT))deallocate(TR_MAT)
-
-
-
+open(unit = 22211, file= "T.txt" )
+do poleB = 4.6 , 5.0 , 0.5
+atomic_Bx = poleB * 0
 call spinsystem_inicjalizacja(NX,NY,liczba_zrodel);
 
-dx = atomic_DX
+
 UTOTAL = 0
 do i = 1 , nx
 do j = 1 , ny
@@ -103,278 +71,27 @@ do j = 1 , ny
 enddo
 enddo
 
-!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
 
-!UTOTAL = 0
-!SUTOTAL = 0
-!open(unit=432,file="dft_uint.txt")
-!do i = 1 , nx
-!do j = 1 , ny
-!    read(432,"(4e20.6)"),fread
-!    !print*,fread
-!    SUTOTAL(i,j,+1) = fread(3) / 1000.0 / Rd
-!    SUTOTAL(i,j,-1) = fread(4) / 1000.0 / Rd
-!enddo
-!    read(432,"(A)")
-!enddo
-!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
-!
-!atomic_Ef = 57.8624513068335
-
-time1 = my_clock()
-
-call zrodla(1)%spinzrodlo_ustaw(4,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-call zrodla(2)%spinzrodlo_ustaw(4,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
+call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
+call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
 call utworz_system(nx)
+
+!TRANS_USE_RESTRICTED_DFT = .true.
 TRANS_EIGPROBLEM_PERIODIC_X = .true.
-call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
-call spinsystem_zapisz_do_pliku("f.txt",ZAPISZ_FLAGI)
 call spindft_initialize()
-
-print*,"sredni promien:", 1/sqrt( M_PI * DFT_NO_DONORS / nx / ny / (atomic_DX)**2 )
-
 call spindft_solve_temp_annealing()
-
-
-ave_dens = DFT_NO_DONORS / nx / ny / (atomic_DX*L2LR)**2
-print*,"sredni promien:", 1/sqrt( M_PI * DFT_NO_DONORS / nx / ny / (atomic_DX)**2 )
-open(unit=222,file="rho.txt")
-
-i = nx/2
-do j = 1 , ny
-    if(GINDEX(i,j,1)>0) then
-    write(222,"(20f20.6)"),j*atomic_DX,DFT_NO_DONORS,&
-    new_rho(DFTINDEX(i,j),1),new_rho(DFTINDEX(i,j),-1),ave_dens
-    endif
-enddo
-close(222)
-
-
+atomic_Ef = DFT_FINDED_EF
 call spindft_free()
-call spinsystem_zwalnienie_pamieci()
-time2 = my_clock()
-print*,"Calkowity czas:", time2 - time1
-
-stop
-
-
-lx0  = 5.0
-la0  = 0.5
-ld0  = 5.0 ! nm
-!open(unit = 543, file= "T0Ef15.txt" )
-!do xtip = 150 , 250 , 10
-!do ytip = 0   , 160 , 10
-!
-!
-!    do i = 1 , nx
-!    do j = 1 , ny
-!        PPOT(i,j) = gauss_gate(la0,xtip,ytip,ld0,ld0,i*dx,j*dx)
-!    enddo
-!    enddo
-!
-!    UTOTAL = UTOTAL + PPOT
-!    call spinsystem_rozwiaz_problem(1,TR_MAT)
-!    UTOTAL = UTOTAL - PPOT
-!    write(543,"(20e20.6)"),xtip,ytip,sum(TR_MAT(2,:)),sum(TR_MAT(1,:))
-!    print *, xtip,ytip,sum(TR_MAT(2,:)),sum(TR_MAT(1,:))
-!
-!    !call spinsystem_zapisz_do_pliku("phi0.txt",ZAPISZ_PHI)
-!
-!enddo
-!    write(543,*),""
-!enddo
-!close(543)
-time1 = get_clock()
-call spinsystem_rozwiaz_problem(1,TR_MAT,.true.)
-!call spinsystem_rozwiaz_problem(1,TR_MAT)
-time1 = get_clock() - time1
-
-time2 = get_clock()
-PPOT = 0
-call spinsystem_rozwiaz_problem_z_poprawki(1,TR_MAT,PPOT)
-!call spinsystem_rozwiaz_problem(1,TR_MAT)
-time2 = get_clock() - time2
-print*,"========================================"
-print*,"Czas wykonania pelnej symulacji:",time1
-print*,"Czas wykonania sym. z  poprawki:",time2
-print*,"========================================"
-call spinsystem_zapisz_do_pliku("phi0.txt",ZAPISZ_PHI)
-
-!open(unit = 543, file= "TpEf15II.txt" )
-!do xtip = 150 , 250 , 10
-!do ytip = 0   , 160 , 10
-!
-!    do i = 1 , nx
-!    do j = 1 , ny
-!        PPOT(i,j) = gauss_gate(la0,xtip,ytip,ld0,ld0,i*dx,j*dx)/Rd/1000.0
-!    enddo
-!    enddo
-!    call spinsystem_rozwiaz_problem_z_poprawki(1,TR_MAT,PPOT)
-!
-!    write(543,"(20e20.6)"),xtip,ytip,sum(TR_MAT(2,:)),sum(TR_MAT(1,:))
-!    print *, xtip,ytip,sum(TR_MAT(2,:)),sum(TR_MAT(1,:))
-!
-!    !call spinsystem_zapisz_do_pliku("phi0.txt",ZAPISZ_PHI)
-!
-!enddo
-!    write(543,*),""
-!enddo
-!close(543)
-
-!call spinsystem_rozwiaz_problem(1,TR_MAT,.true.)
-!call spinsystem_rozwiaz_problem_z_poprawki(1,TR_MAT,PPOT)
-
-
-call spinsystem_finalizuj_poprawki()
+call solve_trans_system()
 
 
 
-
-!call spinsystem_zapisz_do_pliku("phiP.txt",ZAPISZ_PHI)
-!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
-
-deallocate(PPOT)
-call spinsystem_zwalnienie_pamieci()
-
-!
-!call solve_trans_system()
-
-stop
+write(22211,"(20e20.6)"),omega,atomic_Ef,poleB,sum(TR_MAT(2,:)),sum(TR_MAT(1,:)),DFT_CURR_RESIDUUM
 
 
-call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
-!call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
-!call spinsystem_zapisz_do_pliku("flag.txt",ZAPISZ_FLAGI)
-
-!TRANS_EIGPROBLEM_PERIODIC_X = .true.
-!call spindft_initialize()
-!call spindft_solve_temp_annealing()
-!atomic_Ef = DFT_FINDED_EF
-!call solve_trans_system()
-
-!call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-!call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
-
-
-
-call spinsystem_rozwiaz_problem(1,TR_MAT)
-call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
-
-
-!call spinsystem_zapisz_do_pliku("pot_dft.txt",ZAPISZ_POTENCJAL)
-open(unit = 222, file= "T.txt" )
-write(222,"(20e20.6)"),omega,atomic_Ef,atomic_Bz,sum(TR_MAT(2,:)),sum(TR_MAT(1,:)) !,G21(+1)-G21(-1),G21(+1),G21(-1)
-close(222)
-
+enddo
+close(22211)
 if(allocated(TR_MAT))deallocate(TR_MAT)
-
-
-stop
-
-!atomic_Ef = DFT_FINDED_EF
-!call zrodla(1)%spinzrodlo_ustaw(3,NY-3,5,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-!write(111,*),atomic_Ef,DFT_CURR_RESIDUUM,zrodla(1)%liczba_modow
-!
-!
-!UTOTAL = 0
-!do i = 1 , nx
-!do j = 1 , ny
-!    x = i * dx
-!    y = j * dx
-!    UTOTAL(i,j) = gauss_gate(omega,xpos,0.0D0,sigmax,sigmay,x,y) + &
-!                  gauss_gate(omega,xpos,ny*dx,sigmax,sigmay,x,y)
-!enddo
-!enddo
-!call spindft_free()
-!call spindft_initialize()
-!call spindft_fix_ef(atomic_Ef)
-!call spindft_solve_temp_annealing()
-!
-!
-!
-!call spindft_free()
-!atomic_Ef = DFT_FINDED_EF
-!call zrodla(1)%spinzrodlo_ustaw(3,NY-3,5,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-!write(111,*),atomic_Ef,DFT_CURR_RESIDUUM,zrodla(1)%liczba_modow
-!!call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
-!!
-!!call spinsystem_rozwiaz_problem(1,TR_MAT)
-!!call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
-!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
-!!call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
-!
-!!call spinsystem_widmo(0.0D0,2*atomic_Ef,150,0,8)
-!!call spinsystem_widmo(0.0D0,2*atomic_Ef,150,2,8)
-!!call spinsystem_zapisz_widmo_do_pliku("stany",ZAPISZ_STANY_WLASNE)
-!!call spinsystem_zapisz_widmo_do_pliku("widmo.txt",ZAPISZ_WIDMO_VRTCAL)
-
-
-call spinsystem_zwalnienie_pamieci()
-if(allocated(TR_MAT))deallocate(TR_MAT)
-
-
-!
-!
-!!open(unit = 222, file= "T.txt" )
-!!open(unit = 333, file= "K.txt" )
-!!!do  atomic_Bz = -0.0 , 3.0 , 0.05
-!!
-!UTOTAL = 0
-!do i = 1 , nx
-!do j = 1 , ny
-!    x = i * dx
-!    y = j * dx
-!
-!
-!    UTOTAL(i,j) = gauss_gate(omega,xpos,0.0D0,sigmax,sigmay,x,y) + &
-!                  gauss_gate(omega,xpos,ny*dx,sigmax,sigmay,x,y)
-!    !UTOTAL(i,j) = ( 0.5*(omega/1000.0/Rd)**2*((y-ny*dx/2)**2)  )* &
-!    !               exp( -0.5*( x - xpos )**2/(gamma)**2 ) + (omega2/1000.0/Rd)*(y-0*ny*dx/2)
-!
-!enddo
-!enddo
-!!
-!!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
-!!call sledzenie_kf()
-!!
-!!stop
-!
-!!call zrodla(1)%spinzrodlo_ustaw(3,NY/2-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-!!call zrodla(2)%spinzrodlo_ustaw(NY/2-3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
-!call reset_clock()
-!
-!call zrodla(1)%spinzrodlo_ustaw(3,NY-3,1,ZRODLO_KIERUNEK_PRAWO,UTOTAL)
-!call zrodla(2)%spinzrodlo_ustaw(3,NY-3,nx,ZRODLO_KIERUNEK_LEWO,UTOTAL)
-!
-!
-!
-!
-!    call utworz_system()
-!    call spinsystem_rozwiaz_problem(1,TR_MAT)
-!    G21(+1) = 0
-!    G21(-1) = 0
-!
-!    do sum_mod  = 1  , zrodla(1)%liczba_modow -1 , 2
-!        G21(+1) = G21(+1) + TR_MAT(2,sum_mod+0)
-!        G21(-1) = G21(-1) + TR_MAT(2,sum_mod+1)
-!    enddo
-!!    print*,"W=",width,"R=",sum(TR_MAT(1,:)),"T=",sum(TR_MAT(2,:))," inne = " , G21(+1)+G21(-1)
-!    write(222,"(20e20.6)"),omega,atomic_Bz,sum(TR_MAT(2,:)),sum(TR_MAT(1,:)) !,G21(+1)-G21(-1),G21(+1),G21(-1)
-!!    write(333,"(30e20.6)"),omega,atomic_Bz,imag(qpc_zrodlo%ChiKvec(1:qpc_zrodlo%liczba_modow,+1))*L2LR
-!
-!
-!    close(222)
-!    close(333)
-!call spinsystem_zapisz_do_pliku("phi.txt",ZAPISZ_PHI)
-!call spinsystem_zapisz_do_pliku("pot.txt",ZAPISZ_POTENCJAL)
-!call spinsystem_zapisz_do_pliku("j.txt",ZAPISZ_J_ALL)
-!call spinsystem_zapisz_do_pliku("kon.txt",ZAPISZ_KONTUR)
-!call spinsystem_zapisz_do_pliku("divj.txt",ZAPISZ_DIVJ)
-!call spinsystem_zapisz_do_pliku("pol.txt",ZAPISZ_POLARYZACJE)
-!
-!
-!call spinsystem_zwalnienie_pamieci()
-!if(allocated(TR_MAT))deallocate(TR_MAT)
 
 
 
@@ -470,10 +187,8 @@ subroutine utworz_system(nx)
     ! prosty test
 
 
-    wjazd  = nx/2+10
+    wjazd  = nx/2+3
     GFLAGS = B_EMPTY
-
-!    GFLAGS(nx/2-10:nx/2+10,ny/2-20:ny/2+20) = B_NORMAL
 
     ! dajemy na brzegach dirichleta
     GFLAGS(1,:)  = B_DIRICHLET
@@ -481,7 +196,7 @@ subroutine utworz_system(nx)
     GFLAGS(:,1)  = B_DIRICHLET
     GFLAGS(:,NY) = B_DIRICHLET
 !    call system_inicjalizacja_ukladu(wjazd,2,4)
-    call spinsystem_inicjalizacja_ukladu(wjazd,4,0)
+    call spinsystem_inicjalizacja_ukladu(wjazd,4,4)
 end subroutine utworz_system
 
 double precision function gauss_gate(U0,xp,yp,sigmax,sigmay,x,y) result(rval)

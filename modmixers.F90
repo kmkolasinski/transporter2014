@@ -1,7 +1,7 @@
 MODULE modmixers
     implicit none
     private
-    logical :: SCF_MIXER_SHOW_DEBUG = .true.
+    logical :: SCF_MIXER_SHOW_DEBUG = .false.
 
     ENUM,BIND(C)
         ENUMERATOR :: SCF_MIXER_SIMPLE            = 1
