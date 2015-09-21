@@ -402,8 +402,12 @@ module modspindft
                   .and. GLOBAL_ITER       > 5 &
                   .and. DFT_FIX_CORE_STATES == .false. ) then
 
+!            if( (   DFT_CURR_DELTA_ENERGY < DFT_AVERAGE_DELTA_ENERGY ) &
+!                  .and. GLOBAL_ITER       > 5 &
+!                  .and. DFT_FIX_CORE_STATES == .false. ) then
+
                 print*,"Zmiana parametrow feast-a:"
-                print*,"    Ef z     :",DFT_ATOMIC_EF," na:",max_Ef * Rd * 1500.0
+                print*,"    Ef z     :",DFT_ATOMIC_EF," na:",max_Ef * Rd * 1000.0
                 print*,"    L. stanow:",DFT_NO_STATES," na:",max_stanow  + 10
                 DFT_ATOMIC_EF = max_Ef * Rd * 1000.0
                 DFT_NO_STATES = max_stanow  + 10
@@ -531,7 +535,7 @@ module modspindft
         no_core_states      = 0
         ! jesli obecna zmiana energii jest mniejsza niz srednia odleglosc miedzy stanami
         ! to mrozenie jest mozliwe. Warunek konieczny!
-        if(  DFT_CURR_DELTA_ENERGY < DFT_AVERAGE_DELTA_ENERGY/100 .and. GLOBAL_ITER > 5 ) then
+        if(  DFT_CURR_DELTA_ENERGY < DFT_AVERAGE_DELTA_ENERGY .and. GLOBAL_ITER > 5 ) then
             print*,"Warning freezing of core states is enabled!: Curr Res:",DFT_CURR_RESIDUUM
             DFT_FIX_CORE_STATES = .true.
         endif
@@ -575,10 +579,10 @@ module modspindft
                 print*,"Curr Fermi ener:",Ef*Rd*1000
                 print*,"DeltaFermi ener:",abs(Ef-old_Ef)*Rd*1000
                 print*,"Zmiana parametrow feast-a:"
-                print*,"    Ef z     :",DFT_ATOMIC_EF," na:",max_Ef * Rd * 1000.0
-                print*,"    L. stanow:",DFT_NO_STATES," na:",max_stanow  + 10
-                DFT_ATOMIC_EF = max_Ef * Rd * 1000.0
-                DFT_NO_STATES = max_stanow  + 10
+!                print*,"    Ef z     :",DFT_ATOMIC_EF," na:",max_Ef * Rd * 1000.0
+!                print*,"    L. stanow:",DFT_NO_STATES," na:",max_stanow  + 10
+!                DFT_ATOMIC_EF = max_Ef * Rd * 1000.0
+!                DFT_NO_STATES = max_stanow  + 10
             endif
 
         endif

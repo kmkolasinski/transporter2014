@@ -83,7 +83,7 @@ module modspinsystem
     public :: spinsystem_finalizuj_poprawki,spinsystem_rozwiaz_problem_z_poprawki
     public :: spinsystem_widmo,spinsystem_zapisz_widmo_do_pliku,Widmo_NoStates,Widmo_Evals,Widmo_Vecs
     public :: ZAPISZ_STANY_WLASNE , ZAPISZ_WIDMO_VRTCAL , ZAPISZ_WIDMO_HRZNTL
-!    public :: TRANS_T,TRANS_R
+    public :: TRANS_T,TRANS_R
     contains
 
 
@@ -726,7 +726,7 @@ module modspinsystem
     ! ---------------------------------------------------------------------
     complex*16 function T0(d,s,u,v) result(rval)
         integer :: d,s,u,v
-        rval = 4 / 2.0 / DX / DX + DUTOTAL(u,v) + SUTOTAL(u,v,s) + 0.5*s*G_LAN*M_EFF*BZ - Ef
+        rval = 4 / 2.0 / DX / DX + DUTOTAL(u,v) + SUTOTAL(u,v,s) +0.5*0.5*s*G_LAN*M_EFF*BZ - Ef
     end function T0
 
     complex*16 function Tu(d,s,u,v) result(rval)
@@ -751,13 +751,13 @@ module modspinsystem
 
     complex*16 function Sb(d,s,u,v) result(rval)
         integer :: d,s,u,v
-        rval = 0.5*G_LAN*M_EFF*(Bx + s * II * By )
+        rval = 0.5*0.5*G_LAN*M_EFF*(Bx + s * II * By )
     end function Sb
 
     subroutine wypelnij_macierz()
 
         ! zmienne pomocniczne
-        integer          :: itmp,ni,nj,pnj,nn,ln,nzrd,pni,s,u,v,dir
+        integer          :: itmp,ni,nj,pnj,nn,ln,nzrd,pni,s,u,v,dir,pdir
         complex*16       :: post
         doubleprecision  :: kvec
         itmp  = 1
@@ -779,7 +779,7 @@ module modspinsystem
                     idxA (itmp,2) = GINDEX(u,v , s)
                     itmp = itmp + 1
 
-                    cmatA(itmp)   = Tu(-1,s,u,v)
+                    cmatA(itmp)   = Tu(-1,s,u-1,v)
                     idxA (itmp,1) = GINDEX(u  ,v,s)
                     idxA (itmp,2) = GINDEX(u-1,v,s)
                     itmp = itmp + 1
@@ -794,13 +794,13 @@ module modspinsystem
                     idxA(itmp,2) = GINDEX(u,v+1,s)
                     itmp = itmp + 1
 
-                    cmatA(itmp)  = Tv(-1,s,u,v)
+                    cmatA(itmp)  = Tv(-1,s,u,v-1)
                     idxA(itmp,1) = GINDEX(u,v  ,s)
                     idxA(itmp,2) = GINDEX(u,v-1,s)
                     itmp = itmp + 1
 
                     ! oddzialywanie typu rashba
-                    cmatA(itmp)   = Su(-1,-s,u,v)
+                    cmatA(itmp)   = Su(-1,-s,u-1,v)
                     idxA (itmp,1) = GINDEX(u  ,v,+s)
                     idxA (itmp,2) = GINDEX(u-1,v,-s)
                     itmp = itmp + 1
@@ -815,7 +815,7 @@ module modspinsystem
                     idxA(itmp,2) = GINDEX(u,v+1,-s)
                     itmp = itmp + 1
 
-                    cmatA(itmp)  = Sv(-1,-s,u,v)
+                    cmatA(itmp)  = Sv(-1,-s,u,v-1)
                     idxA(itmp,1) = GINDEX(u,v  ,+s)
                     idxA(itmp,2) = GINDEX(u,v-1,-s)
                     itmp = itmp + 1
@@ -827,15 +827,14 @@ module modspinsystem
                     itmp = itmp + 1
 
 
-
-
                 ! ----------------------------------------------------------------------
                 ! Obsluga wejsc
                 ! ----------------------------------------------------------------------
                 else if( GFLAGS(u,v) == B_WEJSCIE) then
                     nzrd = ZFLAGS(u,v)
                     dir  = zrodla(nzrd)%dir
-
+                    pdir = 0
+                    if(zrodla(nzrd)%dir == -1) pdir = -1
 
                     ni   = u
                     nj   = v ! globalne polozenia na siatce

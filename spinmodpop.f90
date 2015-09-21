@@ -801,7 +801,7 @@ subroutine spinmodpop_calc_modes_from_wfm(pDx,pN,pEf,pB,pUvec,pbHorizontal)
            !endif
 
         enddo
-        LICZBA_MODOW_EVANESCENTYCH = 1*LICZBA_MODOW_EVANESCENTYCH/8
+        LICZBA_MODOW_EVANESCENTYCH = LICZBA_MODOW_EVANESCENTYCH/8
         !print*,"NOWAN=",LICZBA_MODOW_EVANESCENTYCH
         if ( TRANS_DEBUG  ) then
         print*,"-------------------------------------------------------------"
